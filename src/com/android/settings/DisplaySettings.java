@@ -122,8 +122,8 @@ public class DisplaySettings extends SettingsPreferenceFragment implements
         PreferenceCategory displayPrefs = (PreferenceCategory)
                 findPreference(KEY_CATEGORY_DISPLAY);
 
-        mScreenSaverPreference = findPreference(KEY_SCREEN_SAVER);
-            getPreferenceScreen().removePreference(mScreenSaverPreference);
+        // mScreenSaverPreference = findPreference(KEY_SCREEN_SAVER);
+        //     getPreferenceScreen().removePreference(mScreenSaverPreference);
 
         mScreenTimeoutPreference = (TimeoutListPreference) findPreference(KEY_SCREEN_TIMEOUT);
         mFontSizePref = findPreference(KEY_FONT_SIZE);
@@ -138,134 +138,134 @@ public class DisplaySettings extends SettingsPreferenceFragment implements
                 }
             }
 
-            if (!NightDisplayController.isAvailable(activity)) {
-                removePreference(KEY_NIGHT_DISPLAY);
-            }
+            // if (!NightDisplayController.isAvailable(activity)) {
+            //     removePreference(KEY_NIGHT_DISPLAY);
+            // }
 
-            mLiftToWakePreference = (SwitchPreference) findPreference(KEY_LIFT_TO_WAKE);
-            if (mLiftToWakePreference != null) {
-                if (isLiftToWakeAvailable(activity)) {
-                    mLiftToWakePreference.setOnPreferenceChangeListener(this);
-                } else {
-                    displayPrefs.removePreference(mLiftToWakePreference);
-                }
-            }
+            // mLiftToWakePreference = (SwitchPreference) findPreference(KEY_LIFT_TO_WAKE);
+            // if (mLiftToWakePreference != null) {
+            //     if (isLiftToWakeAvailable(activity)) {
+            //         mLiftToWakePreference.setOnPreferenceChangeListener(this);
+            //     } else {
+            //         displayPrefs.removePreference(mLiftToWakePreference);
+            //     }
+            // }
 
-            mDozePreference = (SwitchPreference) findPreference(KEY_DOZE);
-            if (mDozePreference != null) {
-                if (isDozeAvailable(activity)) {
-                    mDozePreference.setOnPreferenceChangeListener(this);
-                } else {
-                    displayPrefs.removePreference(mDozePreference);
-                }
-            }
+            // mDozePreference = (SwitchPreference) findPreference(KEY_DOZE);
+            // if (mDozePreference != null) {
+            //     if (isDozeAvailable(activity)) {
+            //         mDozePreference.setOnPreferenceChangeListener(this);
+            //     } else {
+            //         displayPrefs.removePreference(mDozePreference);
+            //     }
+            // }
 
-            mTapToWakePreference = (SwitchPreference) findPreference(KEY_TAP_TO_WAKE);
-            if (mTapToWakePreference != null) {
-                if (isTapToWakeAvailable(getResources())) {
-                    mTapToWakePreference.setOnPreferenceChangeListener(this);
-                } else {
-                    displayPrefs.removePreference(mTapToWakePreference);
-                }
-            }
+            // mTapToWakePreference = (SwitchPreference) findPreference(KEY_TAP_TO_WAKE);
+            // if (mTapToWakePreference != null) {
+            //     if (isTapToWakeAvailable(getResources())) {
+            //         mTapToWakePreference.setOnPreferenceChangeListener(this);
+            //     } else {
+            //         displayPrefs.removePreference(mTapToWakePreference);
+            //     }
+            // }
 
-            mCameraGesturePreference = (SwitchPreference) findPreference(KEY_CAMERA_GESTURE);
-            if (mCameraGesturePreference != null) {
-                if (isCameraGestureAvailable(getResources())) {
-                    mCameraGesturePreference.setOnPreferenceChangeListener(this);
-                } else {
-                    displayPrefs.removePreference(mCameraGesturePreference);
-                }
-            }
+            // mCameraGesturePreference = (SwitchPreference) findPreference(KEY_CAMERA_GESTURE);
+            // if (mCameraGesturePreference != null) {
+            //     if (isCameraGestureAvailable(getResources())) {
+            //         mCameraGesturePreference.setOnPreferenceChangeListener(this);
+            //     } else {
+            //         displayPrefs.removePreference(mCameraGesturePreference);
+            //     }
+            // }
 
-            DropDownPreference rotatePreference =
-                    (DropDownPreference) findPreference(KEY_AUTO_ROTATE);
-            if (rotatePreference != null) {
-                if (RotationPolicy.isRotationLockToggleVisible(activity)) {
-                    int rotateLockedResourceId;
-                    // The following block sets the string used when rotation is locked.
-                    // If the device locks specifically to portrait or landscape (rather than current
-                    // rotation), then we use a different string to include this information.
-                    if (allowAllRotations(activity)) {
-                        rotateLockedResourceId = R.string.display_auto_rotate_stay_in_current;
-                    } else {
-                        if (RotationPolicy.getRotationLockOrientation(activity)
-                                == Configuration.ORIENTATION_PORTRAIT) {
-                            rotateLockedResourceId =
-                                    R.string.display_auto_rotate_stay_in_portrait;
-                        } else {
-                            rotateLockedResourceId =
-                                    R.string.display_auto_rotate_stay_in_landscape;
-                        }
-                    }
-                    rotatePreference.setEntries(new CharSequence[] {
-                            activity.getString(R.string.display_auto_rotate_rotate),
-                            activity.getString(rotateLockedResourceId),
-                    });
-                    rotatePreference.setEntryValues(new CharSequence[] { "0", "1" });
-                    rotatePreference.setValueIndex(RotationPolicy.isRotationLocked(activity) ?
-                            1 : 0);
-                    rotatePreference.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
-                        @Override
-                        public boolean onPreferenceChange(Preference preference, Object newValue) {
-                            final boolean locked = Integer.parseInt((String) newValue) != 0;
-                            MetricsLogger.action(getActivity(), MetricsEvent.ACTION_ROTATION_LOCK,
-                                    locked);
-                            RotationPolicy.setRotationLock(activity, locked);
-                            return true;
-                        }
-                    });
-                } else {
-                    displayPrefs.removePreference(rotatePreference);
-                }
-            }
+            // DropDownPreference rotatePreference =
+            //         (DropDownPreference) findPreference(KEY_AUTO_ROTATE);
+            // if (rotatePreference != null) {
+            //     if (RotationPolicy.isRotationLockToggleVisible(activity)) {
+            //         int rotateLockedResourceId;
+            //         // The following block sets the string used when rotation is locked.
+            //         // If the device locks specifically to portrait or landscape (rather than current
+            //         // rotation), then we use a different string to include this information.
+            //         if (allowAllRotations(activity)) {
+            //             rotateLockedResourceId = R.string.display_auto_rotate_stay_in_current;
+            //         } else {
+            //             if (RotationPolicy.getRotationLockOrientation(activity)
+            //                     == Configuration.ORIENTATION_PORTRAIT) {
+            //                 rotateLockedResourceId =
+            //                         R.string.display_auto_rotate_stay_in_portrait;
+            //             } else {
+            //                 rotateLockedResourceId =
+            //                         R.string.display_auto_rotate_stay_in_landscape;
+            //             }
+            //         }
+            //         rotatePreference.setEntries(new CharSequence[] {
+            //                 activity.getString(R.string.display_auto_rotate_rotate),
+            //                 activity.getString(rotateLockedResourceId),
+            //         });
+            //         rotatePreference.setEntryValues(new CharSequence[] { "0", "1" });
+            //         rotatePreference.setValueIndex(RotationPolicy.isRotationLocked(activity) ?
+            //                 1 : 0);
+            //         rotatePreference.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+            //             @Override
+            //             public boolean onPreferenceChange(Preference preference, Object newValue) {
+            //                 final boolean locked = Integer.parseInt((String) newValue) != 0;
+            //                 MetricsLogger.action(getActivity(), MetricsEvent.ACTION_ROTATION_LOCK,
+            //                         locked);
+            //                 RotationPolicy.setRotationLock(activity, locked);
+            //                 return true;
+            //             }
+            //         });
+            //     } else {
+            //         displayPrefs.removePreference(rotatePreference);
+            //     }
+            // }
 
-            DropDownPreference vrDisplayPref =
-                    (DropDownPreference) findPreference(KEY_VR_DISPLAY_PREF);
-            if (vrDisplayPref != null) {
-                if (isVrDisplayModeAvailable(activity)) {
-                    vrDisplayPref.setEntries(new CharSequence[] {
-                            activity.getString(R.string.display_vr_pref_low_persistence),
-                            activity.getString(R.string.display_vr_pref_off),
-                    });
-                    vrDisplayPref.setEntryValues(new CharSequence[] { "0", "1" });
+        //     DropDownPreference vrDisplayPref =
+        //             (DropDownPreference) findPreference(KEY_VR_DISPLAY_PREF);
+        //     if (vrDisplayPref != null) {
+        //         if (isVrDisplayModeAvailable(activity)) {
+        //             vrDisplayPref.setEntries(new CharSequence[] {
+        //                     activity.getString(R.string.display_vr_pref_low_persistence),
+        //                     activity.getString(R.string.display_vr_pref_off),
+        //             });
+        //             vrDisplayPref.setEntryValues(new CharSequence[] { "0", "1" });
 
-                    final Context c = activity;
-                    int currentUser = ActivityManager.getCurrentUser();
-                    int current = Settings.Secure.getIntForUser(c.getContentResolver(),
-                                    Settings.Secure.VR_DISPLAY_MODE,
-                                    /*default*/Settings.Secure.VR_DISPLAY_MODE_LOW_PERSISTENCE,
-                                    currentUser);
-                    vrDisplayPref.setValueIndex(current);
-                    vrDisplayPref.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
-                        @Override
-                        public boolean onPreferenceChange(Preference preference, Object newValue) {
-                            int i = Integer.parseInt((String) newValue);
-                            int u = ActivityManager.getCurrentUser();
-                            if (!Settings.Secure.putIntForUser(c.getContentResolver(),
-                                    Settings.Secure.VR_DISPLAY_MODE,
-                                    i, u)) {
-                                Log.e(TAG, "Could not change setting for " +
-                                        Settings.Secure.VR_DISPLAY_MODE);
-                            }
-                            return true;
-                        }
-                    });
-                } else {
-                    displayPrefs.removePreference(vrDisplayPref);
-                }
-            }
-        }
+        //             final Context c = activity;
+        //             int currentUser = ActivityManager.getCurrentUser();
+        //             int current = Settings.Secure.getIntForUser(c.getContentResolver(),
+        //                             Settings.Secure.VR_DISPLAY_MODE,
+        //                             /*default*/Settings.Secure.VR_DISPLAY_MODE_LOW_PERSISTENCE,
+        //                             currentUser);
+        //             vrDisplayPref.setValueIndex(current);
+        //             vrDisplayPref.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+        //                 @Override
+        //                 public boolean onPreferenceChange(Preference preference, Object newValue) {
+        //                     int i = Integer.parseInt((String) newValue);
+        //                     int u = ActivityManager.getCurrentUser();
+        //                     if (!Settings.Secure.putIntForUser(c.getContentResolver(),
+        //                             Settings.Secure.VR_DISPLAY_MODE,
+        //                             i, u)) {
+        //                         Log.e(TAG, "Could not change setting for " +
+        //                                 Settings.Secure.VR_DISPLAY_MODE);
+        //                     }
+        //                     return true;
+        //                 }
+        //             });
+        //         } else {
+        //             displayPrefs.removePreference(vrDisplayPref);
+        //         }
+        //     }
+        // }
 
-        mNightModePreference = (ListPreference) findPreference(KEY_NIGHT_MODE);
-        if (mNightModePreference != null) {
-            final UiModeManager uiManager = (UiModeManager) getSystemService(
-                    Context.UI_MODE_SERVICE);
-            final int currentNightMode = uiManager.getNightMode();
-            mNightModePreference.setValue(String.valueOf(currentNightMode));
-            mNightModePreference.setOnPreferenceChangeListener(this);
-        }
-    }
+    //     mNightModePreference = (ListPreference) findPreference(KEY_NIGHT_MODE);
+    //     if (mNightModePreference != null) {
+    //         final UiModeManager uiManager = (UiModeManager) getSystemService(
+    //                 Context.UI_MODE_SERVICE);
+    //         final int currentNightMode = uiManager.getNightMode();
+    //         mNightModePreference.setValue(String.valueOf(currentNightMode));
+    //         mNightModePreference.setOnPreferenceChangeListener(this);
+    //     }
+    // }
 
     private static boolean allowAllRotations(Context context) {
         return Resources.getSystem().getBoolean(

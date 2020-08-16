@@ -226,7 +226,7 @@ public class WifiConfigController implements TextWatcher,
 
             // showIpConfigFields();
             // showProxyFields();
-            mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.VISIBLE);
+            mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.GONE);
             ((CheckBox) mView.findViewById(R.id.wifi_advanced_togglebox))
                     .setOnCheckedChangeListener(this);
 
@@ -280,11 +280,11 @@ public class WifiConfigController implements TextWatcher,
                 // showProxyFields();
                 final CheckBox advancedTogglebox =
                         (CheckBox) mView.findViewById(R.id.wifi_advanced_togglebox);
-                mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.VISIBLE);
+                mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.GONE);
                 advancedTogglebox.setOnCheckedChangeListener(this);
                 advancedTogglebox.setChecked(showAdvancedFields);
                 mView.findViewById(R.id.wifi_advanced_fields)
-                        .setVisibility(showAdvancedFields ? View.VISIBLE : View.GONE);
+                        .setVisibility(View.GONE);
             }
 
             if (mMode == WifiConfigUiBase.MODE_MODIFY) {

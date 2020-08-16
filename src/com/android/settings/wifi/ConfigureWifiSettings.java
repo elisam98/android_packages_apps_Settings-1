@@ -116,11 +116,11 @@ public class ConfigureWifiSettings extends SettingsPreferenceFragment
             // }
         // }
 
-        SwitchPreference notifyOpenNetworks =
-                (SwitchPreference) findPreference(KEY_NOTIFY_OPEN_NETWORKS);
+        // SwitchPreference notifyOpenNetworks =
+        //         (SwitchPreference) findPreference(KEY_NOTIFY_OPEN_NETWORKS);
         // notifyOpenNetworks.setChecked(Settings.Global.getInt(getContentResolver(),
         //         Settings.Global.WIFI_NETWORKS_AVAILABLE_NOTIFICATION_ON, 0) == 1);
-        notifyOpenNetworks.setEnabled(false);
+        // notifyOpenNetworks.setEnabled(mWifiManager.isWifiEnabled());
 
         final Context context = getActivity();
         // if (avoidBadWifiConfig()) {
@@ -135,7 +135,7 @@ public class ConfigureWifiSettings extends SettingsPreferenceFragment
         //     if (pref != null) {
         //         pref.setChecked(currentSetting);
         //     }
-        // }
+        }
 
         mWifiAssistantPreference = (AppListSwitchPreference) findPreference(KEY_WIFI_ASSISTANT);
         Collection<NetworkScorerAppManager.NetworkScorerAppData> scorers =

@@ -224,8 +224,8 @@ public class WifiConfigController implements TextWatcher,
             mSecuritySpinner.setOnItemSelectedListener(this);
             mView.findViewById(R.id.type).setVisibility(View.VISIBLE);
 
-            showIpConfigFields();
-            showProxyFields();
+            // showIpConfigFields();
+            // showProxyFields();
             mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.VISIBLE);
             ((CheckBox) mView.findViewById(R.id.wifi_advanced_togglebox))
                     .setOnCheckedChangeListener(this);
@@ -276,8 +276,8 @@ public class WifiConfigController implements TextWatcher,
             if ((!mAccessPoint.isSaved() && !mAccessPoint.isActive())
                     || mMode != WifiConfigUiBase.MODE_VIEW) {
                 showSecurityFields();
-                showIpConfigFields();
-                showProxyFields();
+                // showIpConfigFields();
+                // showProxyFields();
                 final CheckBox advancedTogglebox =
                         (CheckBox) mView.findViewById(R.id.wifi_advanced_togglebox);
                 mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.VISIBLE);
@@ -1286,9 +1286,9 @@ public class WifiConfigController implements TextWatcher,
         } else if (parent == mEapMethodSpinner || parent == mEapCaCertSpinner) {
             showSecurityFields();
         } else if (parent == mProxySettingsSpinner) {
-            showProxyFields();
+            // showProxyFields();
         } else {
-            showIpConfigFields();
+            // showIpConfigFields();
         }
         showWarningMessagesIfAppropriate();
         enableSubmitIfAppropriate();

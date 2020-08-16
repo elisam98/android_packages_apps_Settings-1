@@ -105,37 +105,10 @@ public class ConfigureWifiSettings extends SettingsPreferenceFragment
             removePreference(KEY_SAVED_NETWORKS);
         }
 
-        // if (!mWifiManager.hasCarrierConfiguredNetworks()){
-            removePreference(KEY_CONNECT_CARRIER_NETWORKS);
-        // } else {
-            // SwitchPreference connectToCarrierNetworks =
-            //         (SwitchPreference) findPreference(KEY_CONNECT_CARRIER_NETWORKS);
-            // if (connectToCarrierNetworks != null) {
-            //     connectToCarrierNetworks.setChecked(Settings.Global.getInt(getContentResolver(),
-            //             Settings.Global.WIFI_CONNECT_CARRIER_NETWORKS, 0) == 1);
-            // }
-        // }
-
-        // SwitchPreference notifyOpenNetworks =
-        //         (SwitchPreference) findPreference(KEY_NOTIFY_OPEN_NETWORKS);
-        // notifyOpenNetworks.setChecked(Settings.Global.getInt(getContentResolver(),
-        //         Settings.Global.WIFI_NETWORKS_AVAILABLE_NOTIFICATION_ON, 0) == 1);
-        // notifyOpenNetworks.setEnabled(mWifiManager.isWifiEnabled());
+        removePreference(KEY_CONNECT_CARRIER_NETWORKS);
 
         final Context context = getActivity();
-        // if (avoidBadWifiConfig()) {
-            // Hide preference toggle, always avoid bad wifi networks.
-            removePreference(KEY_CELLULAR_FALLBACK);
-        // } else {
-        //     // Show preference toggle, initialized based on current settings value.
-        //     boolean currentSetting = avoidBadWifiCurrentSettings();
-        //     SwitchPreference pref = (SwitchPreference) findPreference(KEY_CELLULAR_FALLBACK);
-        //     // TODO: can this ever be null? The return value of avoidBadWifiConfig() can only
-        //     // change if the resources change, but if that happens the activity will be recreated...
-        //     if (pref != null) {
-        //         pref.setChecked(currentSetting);
-        //     }
-        }
+        removePreference(KEY_CELLULAR_FALLBACK);
 
         mWifiAssistantPreference = (AppListSwitchPreference) findPreference(KEY_WIFI_ASSISTANT);
         Collection<NetworkScorerAppManager.NetworkScorerAppData> scorers =

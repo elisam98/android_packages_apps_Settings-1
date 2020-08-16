@@ -298,8 +298,8 @@ public final class BluetoothSettings extends DeviceListPreferenceFragment implem
         menu.add(Menu.NONE, MENU_ID_RENAME_DEVICE, 0, R.string.bluetooth_rename_device)
                 .setEnabled(bluetoothIsEnabled)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(Menu.NONE, MENU_ID_SHOW_RECEIVED, 0, R.string.bluetooth_show_received_files)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        // menu.add(Menu.NONE, MENU_ID_SHOW_RECEIVED, 0, R.string.bluetooth_show_received_files)
+        //         .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         super.onCreateOptionsMenu(menu, inflater);
     }
 
@@ -319,11 +319,11 @@ public final class BluetoothSettings extends DeviceListPreferenceFragment implem
                         getFragmentManager(), "rename device");
                 return true;
 
-            case MENU_ID_SHOW_RECEIVED:
-                MetricsLogger.action(getActivity(), MetricsEvent.ACTION_BLUETOOTH_FILES);
-                Intent intent = new Intent(BTOPP_ACTION_OPEN_RECEIVED_FILES);
-                getActivity().sendBroadcast(intent);
-                return true;
+            // case MENU_ID_SHOW_RECEIVED:
+            //     MetricsLogger.action(getActivity(), MetricsEvent.ACTION_BLUETOOTH_FILES);
+            //     Intent intent = new Intent(BTOPP_ACTION_OPEN_RECEIVED_FILES);
+            //     getActivity().sendBroadcast(intent);
+            //     return true;
         }
         return super.onOptionsItemSelected(item);
     }

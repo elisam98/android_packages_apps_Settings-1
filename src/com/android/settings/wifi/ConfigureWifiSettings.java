@@ -135,7 +135,7 @@ public class ConfigureWifiSettings extends SettingsPreferenceFragment
         //     if (pref != null) {
         //         pref.setChecked(currentSetting);
         //     }
-        }
+        // }
 
         mWifiAssistantPreference = (AppListSwitchPreference) findPreference(KEY_WIFI_ASSISTANT);
         Collection<NetworkScorerAppManager.NetworkScorerAppData> scorers =

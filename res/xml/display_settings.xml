@@ -35,22 +35,22 @@
                 android:summary="@string/auto_brightness_summary" />
 
         <!-- LiveDisplay -->
-        <org.cyanogenmod.internal.cmparts.CMPartsPreference
+        <!-- <org.cyanogenmod.internal.cmparts.CMPartsPreference
             android:key="livedisplay"
-            cm:requiresFeature="org.cyanogenmod.livedisplay" />
+            cm:requiresFeature="org.cyanogenmod.livedisplay" /> -->
 
         <!-- Rotation -->
         <org.cyanogenmod.internal.cmparts.CMPartsPreference
             android:key="rotation"
             cm:requiresFeature="android.hardware.sensor.accelerometer" />
 
-        <com.android.settings.display.NightDisplayPreference
+        <!-- <com.android.settings.display.NightDisplayPreference
                 android:key="night_display"
                 android:title="@string/night_display_title"
                 android:fragment="com.android.settings.display.NightDisplaySettings"
                 android:widgetLayout="@null"
                 settings:keywords="@string/keywords_display_night_display"
-                cm:requiresFeature="!org.cyanogenmod.livedisplay" />
+                cm:requiresFeature="!org.cyanogenmod.livedisplay" /> -->
 
     
 
@@ -61,7 +61,7 @@
                 android:entries="@array/screen_timeout_entries"
                 android:entryValues="@array/screen_timeout_values" />
 
-        <SwitchPreference
+        <!-- <SwitchPreference
                 android:key="camera_gesture"
                 android:title="@string/camera_gesture_title"
                 android:summary="@string/camera_gesture_desc" />
@@ -97,7 +97,7 @@
         <SwitchPreference
                 android:key="tap_to_wake"
                 android:title="@string/tap_to_wake"
-                android:summary="@string/tap_to_wake_summary" />
+                android:summary="@string/tap_to_wake_summary" /> -->
 
         <!-- Prevent accidental wake-up -->
         <cyanogenmod.preference.CMSystemSettingSwitchPreference
@@ -119,7 +119,7 @@
                 android:fragment="com.android.settings.accessibility.ToggleFontSizePreferenceFragment"
                 settings:keywords="@string/keywords_display_font_size" />
 
-        <com.android.settings.display.ScreenZoomPreference
+        <!-- <com.android.settings.display.ScreenZoomPreference
                 android:key="screen_zoom"
                 android:title="@string/screen_zoom_title"
                 settings:keywords="@string/screen_zoom_keywords" />
@@ -129,7 +129,7 @@
                 android:title="@string/burnin_protection_title"
                 android:summary="@string/burnin_protection_summary"
                 android:defaultValue="false"
-                cm:requiresConfig="@*cyanogenmod.platform:bool/config_enableBurnInProtection"/>
+                cm:requiresConfig="@*cyanogenmod.platform:bool/config_enableBurnInProtection"/> -->
 
         <!-- Disable on CM
         <DropDownPreference

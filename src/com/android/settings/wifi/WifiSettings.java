@@ -349,11 +349,11 @@ public class WifiSettings extends RestrictedSettingsFragment
         mScanMenuItem = menu.add(Menu.NONE, MENU_ID_SCAN, 0, R.string.menu_stats_refresh);
         mScanMenuItem.setEnabled(wifiIsEnabled)
                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(Menu.NONE, MENU_ID_ADVANCED, 0, R.string.wifi_menu_advanced)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(Menu.NONE, MENU_ID_CONFIGURE, 0, R.string.wifi_menu_configure)
-                .setIcon(R.drawable.ic_settings_24dp)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+        // menu.add(Menu.NONE, MENU_ID_ADVANCED, 0, R.string.wifi_menu_advanced)
+        //         .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        // menu.add(Menu.NONE, MENU_ID_CONFIGURE, 0, R.string.wifi_menu_configure)
+        //         .setIcon(R.drawable.ic_settings_24dp)
+        //         .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
     }
 
     @Override
@@ -412,28 +412,28 @@ public class WifiSettings extends RestrictedSettingsFragment
                 MetricsLogger.action(getActivity(), MetricsEvent.ACTION_WIFI_FORCE_SCAN);
                 mWifiTracker.forceScan();
                 return true;
-            case MENU_ID_ADVANCED:
-                if (getActivity() instanceof SettingsActivity) {
-                    ((SettingsActivity) getActivity()).startPreferencePanel(
-                            AdvancedWifiSettings.class.getCanonicalName(), null,
-                            R.string.wifi_advanced_titlebar, null, this, 0);
-                } else {
-                    startFragment(this, AdvancedWifiSettings.class.getCanonicalName(),
-                            R.string.wifi_advanced_titlebar, -1 /* Do not request a results */,
-                            null);
-                }
-                return true;
-            case MENU_ID_CONFIGURE:
-                if (getActivity() instanceof SettingsActivity) {
-                    ((SettingsActivity) getActivity()).startPreferencePanel(
-                            ConfigureWifiSettings.class.getCanonicalName(), null,
-                            R.string.wifi_configure_titlebar, null, this, 0);
-                } else {
-                    startFragment(this, ConfigureWifiSettings.class.getCanonicalName(),
-                            R.string.wifi_configure_titlebar, -1 /* Do not request a results */,
-                            null);
-                }
-                return true;
+            // case MENU_ID_ADVANCED:
+            //     if (getActivity() instanceof SettingsActivity) {
+            //         ((SettingsActivity) getActivity()).startPreferencePanel(
+            //                 AdvancedWifiSettings.class.getCanonicalName(), null,
+            //                 R.string.wifi_advanced_titlebar, null, this, 0);
+            //     } else {
+            //         startFragment(this, AdvancedWifiSettings.class.getCanonicalName(),
+            //                 R.string.wifi_advanced_titlebar, -1 /* Do not request a results */,
+            //                 null);
+            //     }
+            //     return true;
+            // case MENU_ID_CONFIGURE:
+            //     if (getActivity() instanceof SettingsActivity) {
+            //         ((SettingsActivity) getActivity()).startPreferencePanel(
+            //                 ConfigureWifiSettings.class.getCanonicalName(), null,
+            //                 R.string.wifi_configure_titlebar, null, this, 0);
+            //     } else {
+            //         startFragment(this, ConfigureWifiSettings.class.getCanonicalName(),
+            //                 R.string.wifi_configure_titlebar, -1 /* Do not request a results */,
+            //                 null);
+            //     }
+            //     return true;
 
         }
         return super.onOptionsItemSelected(item);

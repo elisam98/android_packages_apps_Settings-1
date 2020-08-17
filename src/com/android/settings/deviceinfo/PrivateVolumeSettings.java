@@ -101,12 +101,7 @@ public class PrivateVolumeSettings extends SettingsPreferenceFragment {
     };
 
     private static final int[] ITEMS_SHOW_SHARED = new int[] {
-            R.string.storage_detail_apps,
-            R.string.storage_detail_images,
-            R.string.storage_detail_videos,
-            R.string.storage_detail_audio,
-            R.string.storage_detail_system,
-            R.string.storage_detail_other,
+            R.string.storage_detail_apps
     };
 
     private static final int DELETION_HELPER_SETTINGS = 1;
@@ -225,9 +220,6 @@ public class PrivateVolumeSettings extends SettingsPreferenceFragment {
 
         screen.removeAll();
 
-        if (getResources().getBoolean(R.bool.config_storage_manager_settings_enabled)) {
-            addPreference(screen, mAutomaticStorageManagement);
-        }
         addPreference(screen, mSummary);
 
         List<UserInfo> allUsers = mUserManager.getUsers();
@@ -263,10 +255,6 @@ public class PrivateVolumeSettings extends SettingsPreferenceFragment {
         }
 
         addItem(screen, R.string.storage_detail_cached, null, UserHandle.USER_NULL);
-
-        if (showShared) {
-            addPreference(screen, mExplore);
-        }
 
         final long freeBytes = mVolume.getPath().getFreeSpace();
         final long usedBytes = mTotalSize - freeBytes;
@@ -396,7 +384,6 @@ public class PrivateVolumeSettings extends SettingsPreferenceFragment {
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
         super.onCreateOptionsMenu(menu, inflater);
-        inflater.inflate(R.menu.storage_volume, menu);
     }
 
     @Override

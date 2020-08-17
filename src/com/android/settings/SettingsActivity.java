@@ -1089,8 +1089,8 @@ public class SettingsActivity extends SettingsDrawerActivity
         final boolean isAdmin = um.isAdminUser();
 
         ComponentName comp = new ComponentName("com.android.settings","com.android.settings.Settings$ManageApplicationsActivity");
-        PackageManager pm = this.getPackageManager();
-        pm.setComponentEnabledSetting(comp, PackageManager.COMPONENT_ENABLED_STATE_DISABLED,PackageManager.DONT_KILL_APP);
+        PackageManager pmn = this.getPackageManager();
+        pmn.setComponentEnabledSetting(comp, PackageManager.COMPONENT_ENABLED_STATE_DISABLED,PackageManager.DONT_KILL_APP);
 
         String packageName = getPackageName();
         setTileEnabled(new ComponentName(packageName, WifiSettingsActivity.class.getName()),

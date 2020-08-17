@@ -388,40 +388,7 @@ public class PrivateVolumeSettings extends SettingsPreferenceFragment {
 
     @Override
     public void onPrepareOptionsMenu(Menu menu) {
-        if (!isVolumeValid()) return;
-
-        final MenuItem rename = menu.findItem(R.id.storage_rename);
-        final MenuItem mount = menu.findItem(R.id.storage_mount);
-        final MenuItem unmount = menu.findItem(R.id.storage_unmount);
-        final MenuItem format = menu.findItem(R.id.storage_format);
-        final MenuItem migrate = menu.findItem(R.id.storage_migrate);
-        final MenuItem manage = menu.findItem(R.id.storage_free);
-
-        // Actions live in menu for non-internal private volumes; they're shown
-        // as preference items for public volumes.
-        if (VolumeInfo.ID_PRIVATE_INTERNAL.equals(mVolume.getId())) {
-            rename.setVisible(false);
-            mount.setVisible(false);
-            unmount.setVisible(false);
-            format.setVisible(false);
-            manage.setVisible(getResources().getBoolean(
-                    R.bool.config_storage_manager_settings_enabled));
-        } else {
-            rename.setVisible(mVolume.getType() == VolumeInfo.TYPE_PRIVATE);
-            mount.setVisible(mVolume.getState() == VolumeInfo.STATE_UNMOUNTED);
-            unmount.setVisible(mVolume.isMountedReadable());
-            format.setVisible(true);
-            manage.setVisible(false);
-        }
-
-        format.setTitle(R.string.storage_menu_format_public);
-
-        // Only offer to migrate when not current storage
-        final VolumeInfo privateVol = getActivity().getPackageManager()
-                .getPrimaryStorageCurrentVolume();
-        migrate.setVisible((privateVol != null)
-                && (privateVol.getType() == VolumeInfo.TYPE_PRIVATE)
-                && !Objects.equals(mVolume, privateVol));
+        return;
     }
 
     @Override

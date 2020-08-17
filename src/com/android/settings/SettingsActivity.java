@@ -1097,10 +1097,6 @@ public class SettingsActivity extends SettingsDrawerActivity
                 pm.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH), isAdmin, pm);
 
         setTileEnabled(new ComponentName(packageName,
-                        Settings.ManageApplicationsActivity.class.getName()),
-                false, isAdmin, pm);
-
-        setTileEnabled(new ComponentName(packageName,
                         Settings.DataUsageSummaryActivity.class.getName()),
                 false, isAdmin, pm);
 

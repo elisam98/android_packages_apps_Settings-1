@@ -109,15 +109,6 @@ public class AppHeader {
     }
 
     public static boolean includeAppInfo(final Fragment fragment) {
-        Bundle args = fragment.getArguments();
-        boolean showInfo = true;
-        if (args != null && args.getBoolean(EXTRA_HIDE_INFO_BUTTON, false)) {
-            showInfo = false;
-        }
-        Intent intent = fragment.getActivity().getIntent();
-        if (intent != null && intent.getBooleanExtra(EXTRA_HIDE_INFO_BUTTON, false)) {
-            showInfo = false;
-        }
-        return showInfo;
+        return false;
     }
 }

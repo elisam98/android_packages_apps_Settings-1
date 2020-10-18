@@ -17,9 +17,9 @@
 package com.android.settings;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.admin.DevicePolicyManager;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -39,8 +39,10 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.appcompat.app.AlertDialog;
+
 import com.android.settings.SettingsPreferenceFragment.SettingsDialogFragment;
+import com.android.settings.core.InstrumentedFragment;
 
 public class ProxySelector extends InstrumentedFragment implements DialogCreatable {
     private static final String TAG = "ProxySelector";
@@ -56,11 +58,6 @@ public class ProxySelector extends InstrumentedFragment implements DialogCreatab
 
     private SettingsDialogFragment mDialogFragment;
     private View mView;
-
-    @Override
-    public void onCreate(Bundle icicle) {
-        super.onCreate(icicle);
-    }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -107,12 +104,17 @@ public class ProxySelector extends InstrumentedFragment implements DialogCreatab
         return null;
     }
 
+    @Override
+    public int getDialogMetricsCategory(int dialogId) {
+        return SettingsEnums.DIALOG_PROXY_SELECTOR_ERROR;
+    }
+
     private void showDialog(int dialogId) {
         if (mDialogFragment != null) {
             Log.e(TAG, "Old dialog fragment not null!");
         }
-        mDialogFragment = new SettingsDialogFragment(this, dialogId);
-        mDialogFragment.show(getActivity().getFragmentManager(), Integer.toString(dialogId));
+        mDialogFragment = SettingsDialogFragment.newInstance(this, dialogId);
+        mDialogFragment.show(getActivity().getSupportFragmentManager(), Integer.toString(dialogId));
     }
 
     private void initView(View view) {
@@ -173,6 +175,8 @@ public class ProxySelector extends InstrumentedFragment implements DialogCreatab
         String title = intent.getStringExtra("title");
         if (!TextUtils.isEmpty(title)) {
             activity.setTitle(title);
+        } else {
+            activity.setTitle(R.string.proxy_settings_title);
         }
     }
 
@@ -272,7 +276,7 @@ public class ProxySelector extends InstrumentedFragment implements DialogCreatab
         };
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.PROXY_SELECTOR;
+    public int getMetricsCategory() {
+        return SettingsEnums.PROXY_SELECTOR;
     }
 }

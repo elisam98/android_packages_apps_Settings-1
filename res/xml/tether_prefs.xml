@@ -14,53 +14,44 @@
      limitations under the License.
 -->
 
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:settings="http://schemas.android.com/apk/res-auto">
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:settings="http://schemas.android.com/apk/res-auto"
+    android:title="@string/tether_settings_title_all">
+
+    <com.android.settings.widget.FixedLineSummaryPreference
+        android:key="wifi_tether"
+        android:title="@string/wifi_hotspot_checkbox_text"
+        android:summary="@string/summary_placeholder"
+        android:fragment="com.android.settings.wifi.tether.WifiTetherSettings"
+        settings:summaryLineCount="2" />
 
     <SwitchPreference
-        android:key="enable_wifi_ap"
-        android:title="@string/wifi_tether_checkbox_text" />
+        android:key="usb_tether_settings"
+        android:title="@string/usb_tethering_button_text"
+        android:summary="@string/usb_tethering_subtext"
+        settings:keywords="@string/keywords_hotspot_tethering" />
 
-    <com.android.settings.HotspotPreference
-        android:key="enable_wifi_ap_ext"
-        android:title="@string/wifi_tether_checkbox_text"
-        android:layout="@layout/hotspot_checkbox"
-        android:persistent="false" />
+    <SwitchPreference
+        android:key="enable_bluetooth_tethering"
+        android:title="@string/bluetooth_tether_checkbox_text"
+        android:summary="@string/bluetooth_tethering_subtext"
+        settings:keywords="@string/keywords_hotspot_tethering" />
+
+    <SwitchPreference
+        android:key="enable_ethernet_tethering"
+        android:title="@string/ethernet_tether_checkbox_text"
+        android:summary="@string/ethernet_tethering_subtext"
+        settings:keywords="@string/keywords_hotspot_tethering" />
 
     <Preference
-        android:key="wifi_ap_ssid_and_security"
-        android:title="@string/wifi_tether_configure_ap_text"
-        android:persistent="false" />
+        android:key="disabled_on_data_saver"
+        android:summary="@string/tether_settings_disabled_on_data_saver"
+        android:selectable="false"
+        settings:allowDividerAbove="true" />
 
-    <ListPreference
-            android:key="hotstpot_inactivity_timeout"
-            android:title="@string/hotstpot_inactivity_timeout_text"
-            android:entries="@array/hotstpot_inactivity_timeout_entries"
-            android:entryValues="@array/hotstpot_inactivity_timeout_values"
-            android:persistent="false" />
-
-    <com.android.settings.DividerPreference
-            android:key="disabled_on_data_saver"
-            android:summary="@string/tether_settings_disabled_on_data_saver"
-            android:selectable="false"
-            settings:allowDividerAbove="true" />
-    <PreferenceScreen
-        android:key="tethering_help"
-        android:title="@string/tethering_help_button_text" >
-    </PreferenceScreen>
-
-    <PreferenceCategory
-            android:title="@string/tethering_other_category_text">
-
-        <SwitchPreference
-                android:key="usb_tether_settings"
-                android:title="@string/usb_tethering_button_text"
-                android:persistent="false" />
-
-        <SwitchPreference
-                android:key="enable_bluetooth_tethering"
-                android:title="@string/bluetooth_tether_checkbox_text"
-                android:persistent="false" />
-
-    </PreferenceCategory>
+    <com.android.settingslib.widget.FooterPreference
+        android:key="tether_prefs_footer"
+        android:selectable="false"
+        settings:searchable="false"/>
 </PreferenceScreen>

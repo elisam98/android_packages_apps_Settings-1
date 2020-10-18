@@ -15,7 +15,7 @@
     limitations under the License
 -->
 
-<com.android.setupwizardlib.GlifLayout
+<com.google.android.setupdesign.GlifLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     style="?attr/fingerprint_layout_theme"
     android:id="@+id/setup_wizard_layout"
@@ -23,44 +23,40 @@
     android:layout_height="match_parent">
 
     <LinearLayout
-        style="@style/SuwContentFrame"
+        style="@style/SudContentFrame"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:orientation="vertical">
 
-        <com.android.setupwizardlib.view.RichTextView
-            android:id="@+id/description_text"
-            style="@style/SuwDescription.Glif"
+        <com.google.android.setupdesign.view.RichTextView
+            android:id="@+id/sud_layout_description"
+            style="@style/SudDescription.Glif"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/security_settings_fingerprint_enroll_introduction_message" />
 
-        <LinearLayout
+        <com.google.android.setupdesign.view.RichTextView
+            android:id="@+id/error_text"
+            style="@style/SudDescription.Glif"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <com.google.android.setupdesign.view.FillContentLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:layout_weight="1">
 
-            <Button
-                android:id="@+id/fingerprint_cancel_button"
-                style="@style/SetupWizardButton.Negative"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/security_settings_fingerprint_enroll_introduction_cancel" />
+            <ImageView
+                style="@style/SudContentIllustration"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@null"
+                android:src="@drawable/fingerprint_enroll_introduction" />
 
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <Button
-                android:id="@+id/fingerprint_next_button"
-                style="@style/SetupWizardButton.Positive"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/suw_next_button_label" />
-
-        </LinearLayout>
+        </com.google.android.setupdesign.view.FillContentLayout>
 
     </LinearLayout>
 
-</com.android.setupwizardlib.GlifLayout>
+</com.google.android.setupdesign.GlifLayout>

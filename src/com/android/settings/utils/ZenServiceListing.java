@@ -16,42 +16,44 @@
 package com.android.settings.utils;
 
 import android.app.ActivityManager;
+import android.app.NotificationManager;
 import android.content.ComponentName;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.ComponentInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
-import android.provider.Settings;
-import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.Slog;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
 public class ZenServiceListing {
 
-    private final ContentResolver mContentResolver;
     private final Context mContext;
     private final ManagedServiceSettings.Config mConfig;
-    private final Set<ServiceInfo> mApprovedServices = new ArraySet<ServiceInfo>();
+    private final Set<ComponentInfo> mApprovedComponents = new ArraySet<>();
     private final List<Callback> mZenCallbacks = new ArrayList<>();
+    private final NotificationManager mNm;
 
     public ZenServiceListing(Context context, ManagedServiceSettings.Config config) {
         mContext = context;
         mConfig = config;
-        mContentResolver = context.getContentResolver();
+        mNm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
     }
 
-    public ServiceInfo findService(final ComponentName cn) {
-        for (ServiceInfo service : mApprovedServices) {
-            final ComponentName serviceCN = new ComponentName(service.packageName, service.name);
-            if (serviceCN.equals(cn)) {
-                return service;
+    public ComponentInfo findService(final ComponentName cn) {
+        if (cn == null) {
+            return null;
+        }
+        for (ComponentInfo component : mApprovedComponents) {
+            final ComponentName ci = new ComponentName(component.packageName, component.name);
+            if (ci.equals(cn)) {
+                return component;
             }
         }
         return null;
@@ -66,56 +68,29 @@ public class ZenServiceListing {
     }
 
     public void reloadApprovedServices() {
-        mApprovedServices.clear();
-        String[] settings = {mConfig.setting, mConfig.secondarySetting};
+        mApprovedComponents.clear();
 
-        for (String setting : settings) {
-            if (!TextUtils.isEmpty(setting)) {
-                final String flat = Settings.Secure.getString(mContentResolver, setting);
-                if (!TextUtils.isEmpty(flat)) {
-                    final List<String> names = Arrays.asList(flat.split(":"));
-                    List<ServiceInfo> services = new ArrayList<>();
-                    getServices(mConfig, services, mContext.getPackageManager());
-                    for (ServiceInfo service : services) {
-                        if (matchesApprovedPackage(names, service.getComponentName())) {
-                            mApprovedServices.add(service);
-                        }
-                    }
-                }
+        List<String> enabledNotificationListenerPkgs = mNm.getEnabledNotificationListenerPackages();
+        List<ComponentInfo> components = new ArrayList<>();
+        getServices(mConfig, components, mContext.getPackageManager());
+        getActivities(mConfig, components, mContext.getPackageManager());
+        for (ComponentInfo componentInfo : components) {
+            final String pkg = componentInfo.getComponentName().getPackageName();
+            if (mNm.isNotificationPolicyAccessGrantedForPackage(pkg)
+                || enabledNotificationListenerPkgs.contains(pkg)) {
+                mApprovedComponents.add(componentInfo);
             }
         }
-        if (!mApprovedServices.isEmpty()) {
+
+        if (!mApprovedComponents.isEmpty()) {
             for (Callback callback : mZenCallbacks) {
-                callback.onServicesReloaded(mApprovedServices);
+                callback.onComponentsReloaded(mApprovedComponents);
             }
         }
     }
 
-    // Setting could contain: the component name of the condition provider, the package name of
-    // the condition provider, the component name of the notification listener.
-    private boolean matchesApprovedPackage(List<String> approved, ComponentName serviceOwner) {
-        String flatCn = serviceOwner.flattenToString();
-        if (approved.contains(flatCn) || approved.contains(serviceOwner.getPackageName())) {
-            return true;
-        }
-        for (String entry : approved) {
-            if (!TextUtils.isEmpty(entry)) {
-                ComponentName approvedComponent = ComponentName.unflattenFromString(entry);
-                if (approvedComponent != null && approvedComponent.getPackageName().equals(
-                        serviceOwner.getPackageName())) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static int getServices(ManagedServiceSettings.Config c, List<ServiceInfo> list,
+    private static void getServices(ManagedServiceSettings.Config c, List<ComponentInfo> list,
             PackageManager pm) {
-        int services = 0;
-        if (list != null) {
-            list.clear();
-        }
         final int user = ActivityManager.getCurrentUser();
 
         List<ResolveInfo> installedServices = pm.queryIntentServicesAsUser(
@@ -137,12 +112,28 @@ public class ZenServiceListing {
             if (list != null) {
                 list.add(info);
             }
-            services++;
         }
-        return services;
+    }
+
+    private static void getActivities(ManagedServiceSettings.Config c, List<ComponentInfo> list,
+            PackageManager pm) {
+        final int user = ActivityManager.getCurrentUser();
+
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivitiesAsUser(
+                new Intent(c.configIntentAction),
+                PackageManager.GET_ACTIVITIES | PackageManager.GET_META_DATA,
+                user);
+
+        for (int i = 0, count = resolveInfos.size(); i < count; i++) {
+            ResolveInfo resolveInfo = resolveInfos.get(i);
+            ActivityInfo info = resolveInfo.activityInfo;
+            if (list != null) {
+                list.add(info);
+            }
+        }
     }
 
     public interface Callback {
-        void onServicesReloaded(Set<ServiceInfo> services);
+        void onComponentsReloaded(Set<ComponentInfo> components);
     }
 }

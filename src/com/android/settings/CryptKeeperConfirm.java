@@ -16,8 +16,10 @@
 
 package com.android.settings;
 
+import android.annotation.Nullable;
 import android.app.Activity;
 import android.app.StatusBarManager;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -25,7 +27,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.ServiceManager;
 import android.os.UserHandle;
-import android.os.storage.IMountService;
+import android.os.storage.IStorageManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -33,9 +35,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
 import com.android.internal.widget.LockPatternUtils;
+import com.android.settings.core.InstrumentedFragment;
 
+import java.util.Arrays;
 import java.util.Locale;
 
 public class CryptKeeperConfirm extends InstrumentedFragment {
@@ -43,8 +46,8 @@ public class CryptKeeperConfirm extends InstrumentedFragment {
     private static final String TAG = "CryptKeeperConfirm";
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.CRYPT_KEEPER_CONFIRM;
+    public int getMetricsCategory() {
+        return SettingsEnums.CRYPT_KEEPER_CONFIRM;
     }
 
     public static class Blank extends Activity {
@@ -82,10 +85,15 @@ public class CryptKeeperConfirm extends InstrumentedFragment {
                         return;
                     }
 
-                    IMountService mountService = IMountService.Stub.asInterface(service);
+                    IStorageManager storageManager = IStorageManager.Stub.asInterface(service);
                     try {
                         Bundle args = getIntent().getExtras();
-                        mountService.encryptStorage(args.getInt("type", -1), args.getString("password"));
+                        // TODO(b/120484642): Update vold to accept a password as a byte array
+                        byte[] passwordBytes = args.getByteArray("password");
+                        String password = passwordBytes != null ? new String(passwordBytes) : null;
+                        Arrays.fill(passwordBytes, (byte) 0);
+                        storageManager.encryptStorage(args.getInt("type", -1),
+                                password);
                     } catch (Exception e) {
                         Log.e("CryptKeeper", "Error while encrypting...", e);
                     }
@@ -139,8 +147,8 @@ public class CryptKeeperConfirm extends InstrumentedFragment {
             // 2. The system locale.
             try {
                 IBinder service = ServiceManager.getService("mount");
-                IMountService mountService = IMountService.Stub.asInterface(service);
-                mountService.setField("SystemLocale", Locale.getDefault().toLanguageTag());
+                IStorageManager storageManager = IStorageManager.Stub.asInterface(service);
+                storageManager.setField("SystemLocale", Locale.getDefault().toLanguageTag());
             } catch (Exception e) {
                 Log.e(TAG, "Error storing locale for decryption UI", e);
             }
@@ -153,9 +161,14 @@ public class CryptKeeperConfirm extends InstrumentedFragment {
     }
 
     @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getActivity().setTitle(R.string.crypt_keeper_confirm_title);
+    }
+
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
-        setHasOptionsMenu(true);
         mContentView = inflater.inflate(R.layout.crypt_keeper_confirm, null);
         establishFinalConfirmationState();
         return mContentView;

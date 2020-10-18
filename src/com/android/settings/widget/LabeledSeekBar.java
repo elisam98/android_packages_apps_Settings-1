@@ -17,12 +17,8 @@
 package com.android.settings.widget;
 
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.os.Bundle;
-import android.support.v4.view.ViewCompat;
-import android.support.v4.view.accessibility.AccessibilityNodeInfoCompat;
-import android.support.v4.widget.ExploreByTouchHelper;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -30,6 +26,10 @@ import android.view.accessibility.AccessibilityEvent;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
+
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
+import androidx.customview.widget.ExploreByTouchHelper;
 
 import java.util.List;
 
@@ -201,6 +201,7 @@ public class LabeledSeekBar extends SeekBar {
             int posBase = Math.max(0,
                     ((int) x - LabeledSeekBar.this.getPaddingStart()) / getHalfVirtualViewWidth());
             posBase = (posBase + 1) / 2;
+            posBase = Math.min(posBase, LabeledSeekBar.this.getMax());
             return mIsLayoutRtl ? LabeledSeekBar.this.getMax() - posBase : posBase;
         }
 

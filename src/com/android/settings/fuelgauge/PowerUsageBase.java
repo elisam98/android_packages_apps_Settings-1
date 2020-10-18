@@ -15,39 +15,35 @@
  */
 package com.android.settings.fuelgauge;
 
+import static com.android.settings.fuelgauge.BatteryBroadcastReceiver.BatteryUpdateType;
+
 import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.os.BatteryStats;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Message;
 import android.os.UserManager;
-import android.support.annotation.VisibleForTesting;
 import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
 
 import com.android.internal.os.BatteryStatsHelper;
-import com.android.settings.R;
-import com.android.settings.SettingsPreferenceFragment;
+import com.android.settings.dashboard.DashboardFragment;
 
 /**
  * Common base class for things that need to show the battery usage graph.
  */
-public abstract class PowerUsageBase extends SettingsPreferenceFragment {
+public abstract class PowerUsageBase extends DashboardFragment {
 
     // +1 to allow ordering for PowerUsageSummary.
     @VisibleForTesting
     static final int MENU_STATS_REFRESH = Menu.FIRST + 1;
+    private static final String TAG = "PowerUsageBase";
+    private static final String KEY_REFRESH_TYPE = "refresh_type";
 
     protected BatteryStatsHelper mStatsHelper;
     protected UserManager mUm;
-
-    private String mBatteryLevel;
-    private String mBatteryStatus;
+    private BatteryBroadcastReceiver mBatteryBroadcastReceiver;
 
     @Override
     public void onAttach(Activity activity) {
@@ -61,114 +57,64 @@ public abstract class PowerUsageBase extends SettingsPreferenceFragment {
         super.onCreate(icicle);
         mStatsHelper.create(icicle);
         setHasOptionsMenu(true);
+
+        mBatteryBroadcastReceiver = new BatteryBroadcastReceiver(getContext());
+        mBatteryBroadcastReceiver.setBatteryChangedListener(type -> {
+            restartBatteryStatsLoader(type);
+        });
     }
 
     @Override
     public void onStart() {
         super.onStart();
-        mStatsHelper.clearStats();
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        BatteryStatsHelper.dropFile(getActivity(), BatteryHistoryPreference.BATTERY_HISTORY_FILE);
-        updateBatteryStatus(getActivity().registerReceiver(mBatteryInfoReceiver,
-                new IntentFilter(Intent.ACTION_BATTERY_CHANGED)));
-        if (mHandler.hasMessages(MSG_REFRESH_STATS)) {
-            mHandler.removeMessages(MSG_REFRESH_STATS);
-            mStatsHelper.clearStats();
-        }
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        getActivity().unregisterReceiver(mBatteryInfoReceiver);
+        mBatteryBroadcastReceiver.register();
     }
 
     @Override
     public void onStop() {
         super.onStop();
-        mHandler.removeMessages(MSG_REFRESH_STATS);
+        mBatteryBroadcastReceiver.unRegister();
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        if (getActivity().isChangingConfigurations()) {
-            mStatsHelper.storeState();
-        }
+    protected void restartBatteryStatsLoader(int refreshType) {
+        final Bundle bundle = new Bundle();
+        bundle.putInt(KEY_REFRESH_TYPE, refreshType);
+
+        getLoaderManager().restartLoader(0, bundle, new PowerLoaderCallback());
     }
 
-    @Override
-    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        super.onCreateOptionsMenu(menu, inflater);
-        MenuItem refresh = menu.add(0, MENU_STATS_REFRESH, 0, R.string.menu_stats_refresh)
-                .setIcon(com.android.internal.R.drawable.ic_menu_refresh)
-                .setAlphabeticShortcut('r');
-        refresh.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM |
-                MenuItem.SHOW_AS_ACTION_WITH_TEXT);
-    }
-
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case MENU_STATS_REFRESH:
-                mStatsHelper.clearStats();
-                refreshStats();
-                mHandler.removeMessages(MSG_REFRESH_STATS);
-                return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
-
-    protected void refreshStats() {
-        mStatsHelper.refreshStats(BatteryStats.STATS_SINCE_CHARGED, mUm.getUserProfiles());
-    }
+    protected abstract void refreshUi(@BatteryUpdateType int refreshType);
 
     protected void updatePreference(BatteryHistoryPreference historyPref) {
+        final long startTime = System.currentTimeMillis();
         historyPref.setStats(mStatsHelper);
+        BatteryUtils.logRuntime(TAG, "updatePreference", startTime);
     }
 
-    private boolean updateBatteryStatus(Intent intent) {
-        if (intent != null) {
-            String batteryLevel = com.android.settings.Utils.getBatteryPercentage(intent);
-            String batteryStatus = com.android.settings.Utils.getBatteryStatus(getResources(),
-                    intent);
-            if (!batteryLevel.equals(mBatteryLevel) || !batteryStatus.equals(mBatteryStatus)) {
-                mBatteryLevel = batteryLevel;
-                mBatteryStatus = batteryStatus;
-                return true;
-            }
+    /**
+     * {@link android.app.LoaderManager.LoaderCallbacks} for {@link PowerUsageBase} to load
+     * the {@link BatteryStatsHelper}
+     */
+    public class PowerLoaderCallback implements LoaderManager.LoaderCallbacks<BatteryStatsHelper> {
+        private int mRefreshType;
+
+        @Override
+        public Loader<BatteryStatsHelper> onCreateLoader(int id,
+                Bundle args) {
+            mRefreshType = args.getInt(KEY_REFRESH_TYPE);
+            return new BatteryStatsHelperLoader(getContext());
         }
-        return false;
+
+        @Override
+        public void onLoadFinished(Loader<BatteryStatsHelper> loader,
+                BatteryStatsHelper statsHelper) {
+            mStatsHelper = statsHelper;
+            refreshUi(mRefreshType);
+        }
+
+        @Override
+        public void onLoaderReset(Loader<BatteryStatsHelper> loader) {
+
+        }
     }
-
-    static final int MSG_REFRESH_STATS = 100;
-
-    private final Handler mHandler = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-                case MSG_REFRESH_STATS:
-                    mStatsHelper.clearStats();
-                    refreshStats();
-                    break;
-            }
-        }
-    };
-
-    private BroadcastReceiver mBatteryInfoReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (Intent.ACTION_BATTERY_CHANGED.equals(action)
-                    && updateBatteryStatus(intent)) {
-                if (!mHandler.hasMessages(MSG_REFRESH_STATS)) {
-                    mHandler.sendEmptyMessageDelayed(MSG_REFRESH_STATS, 500);
-                }
-            }
-        }
-    };
-
 }

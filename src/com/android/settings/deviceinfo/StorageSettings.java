@@ -16,16 +16,13 @@
 
 package com.android.settings.deviceinfo;
 
-import android.app.Activity;
-import android.app.AlertDialog;
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
 import android.app.Dialog;
-import android.app.DialogFragment;
-import android.app.Fragment;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.UserHandle;
@@ -35,56 +32,57 @@ import android.os.storage.StorageEventListener;
 import android.os.storage.StorageManager;
 import android.os.storage.VolumeInfo;
 import android.os.storage.VolumeRecord;
-import android.support.annotation.NonNull;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceCategory;
 import android.text.TextUtils;
 import android.text.format.Formatter;
 import android.text.format.Formatter.BytesResult;
 import android.util.Log;
 import android.widget.Toast;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.annotation.NonNull;
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
+import androidx.fragment.app.Fragment;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
+
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
-import com.android.settings.Utils;
-import com.android.settings.dashboard.SummaryLoader;
+import com.android.settings.core.SubSettingLauncher;
+import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 import com.android.settings.search.BaseSearchIndexProvider;
-import com.android.settings.search.Indexable;
-import com.android.settings.search.SearchIndexableRaw;
 import com.android.settingslib.RestrictedLockUtils;
+import com.android.settingslib.RestrictedLockUtilsInternal;
 import com.android.settingslib.deviceinfo.PrivateStorageInfo;
 import com.android.settingslib.deviceinfo.StorageManagerVolumeProvider;
-import com.android.settingslib.drawer.SettingsDrawerActivity;
+import com.android.settingslib.search.Indexable;
+import com.android.settingslib.search.SearchIndexable;
+import com.android.settingslib.search.SearchIndexableRaw;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
-
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 /**
  * Panel showing both internal storage (both built-in storage and private
  * volumes) and removable storage (public volumes).
  */
+@SearchIndexable
 public class StorageSettings extends SettingsPreferenceFragment implements Indexable {
     static final String TAG = "StorageSettings";
 
+    private static final String KEY_STORAGE_SETTINGS = "storage_settings";
+    private static final String KEY_INTERNAL_STORAGE = "storage_settings_internal_storage";
+    private static final String KEY_STORAGE_SETTINGS_VOLUME = "storage_settings_volume_";
+    private static final String KEY_STORAGE_SETTINGS_MEMORY_SIZE = "storage_settings_memory_size";
+    private static final String KEY_STORAGE_SETTINGS_MEMORY = "storage_settings_memory_available";
+    private static final String KEY_STORAGE_SETTINGS_DCIM = "storage_settings_dcim_space";
+    private static final String KEY_STORAGE_SETTINGS_MUSIC = "storage_settings_music_space";
+    private static final String KEY_STORAGE_SETTINGS_MISC = "storage_settings_misc_space";
+    private static final String KEY_STORAGE_SETTINGS_FREE_SPACE = "storage_settings_free_space";
+
     private static final String TAG_VOLUME_UNMOUNTED = "volume_unmounted";
     private static final String TAG_DISK_INIT = "disk_init";
-
-    static final int COLOR_PUBLIC = Color.parseColor("#ff9e9e9e");
-    static final int COLOR_WARNING = Color.parseColor("#fff4511e");
-
-    static final int[] COLOR_PRIVATE = new int[] {
-            Color.parseColor("#ff26a69a"),
-            Color.parseColor("#ffab47bc"),
-            Color.parseColor("#fff2a600"),
-            Color.parseColor("#ffec407a"),
-            Color.parseColor("#ffc0ca33"),
-    };
+    private static final int METRICS_CATEGORY = SettingsEnums.DEVICEINFO_STORAGE;
 
     private StorageManager mStorageManager;
 
@@ -94,13 +92,15 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
     private StorageSummaryPreference mInternalSummary;
     private static long sTotalInternalStorage;
 
+    private boolean mHasLaunchedPrivateVolumeSettings = false;
+
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.DEVICEINFO_STORAGE;
+    public int getMetricsCategory() {
+        return METRICS_CATEGORY;
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_uri_storage;
     }
 
@@ -111,7 +111,6 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
         final Context context = getActivity();
 
         mStorageManager = context.getSystemService(StorageManager.class);
-        mStorageManager.registerListener(mStorageListener);
 
         if (sTotalInternalStorage <= 0) {
             sTotalInternalStorage = mStorageManager.getPrimaryStorageSize();
@@ -142,16 +141,17 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
     };
 
     private static boolean isInteresting(VolumeInfo vol) {
-        switch(vol.getType()) {
+        switch (vol.getType()) {
             case VolumeInfo.TYPE_PRIVATE:
             case VolumeInfo.TYPE_PUBLIC:
+            case VolumeInfo.TYPE_STUB:
                 return true;
             default:
                 return false;
         }
     }
 
-    private void refresh() {
+    private synchronized void refresh() {
         final Context context = getPrefContext();
 
         getPreferenceScreen().removeAll();
@@ -160,34 +160,30 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
 
         mInternalCategory.addPreference(mInternalSummary);
 
-        int privateCount = 0;
-        long privateUsedBytes = 0;
-        long privateTotalBytes = 0;
+        final StorageManagerVolumeProvider smvp = new StorageManagerVolumeProvider(mStorageManager);
+        final PrivateStorageInfo info = PrivateStorageInfo.getPrivateStorageInfo(smvp);
+        final long privateTotalBytes = info.totalBytes;
+        final long privateUsedBytes = info.totalBytes - info.freeBytes;
 
         final List<VolumeInfo> volumes = mStorageManager.getVolumes();
         Collections.sort(volumes, VolumeInfo.getDescriptionComparator());
 
-        long primaryPhysicalTotalSpace = PrivateStorageInfo.getPrimaryPhysicalTotalSpace(volumes);
         for (VolumeInfo vol : volumes) {
             if (vol.getType() == VolumeInfo.TYPE_PRIVATE) {
-                final long volumeTotalBytes = PrivateStorageInfo.getTotalSize(vol,
-                        sTotalInternalStorage) - primaryPhysicalTotalSpace;
-                final int color = COLOR_PRIVATE[privateCount++ % COLOR_PRIVATE.length];
-                mInternalCategory.addPreference(
-                        new StorageVolumePreference(context, vol, color, volumeTotalBytes));
-                if (vol.isMountedReadable()) {
-                    final File path = vol.getPath();
-                    privateUsedBytes += (volumeTotalBytes - path.getFreeSpace());
-                    privateTotalBytes += volumeTotalBytes;
-                }
-            } else if (vol.getType() == VolumeInfo.TYPE_PUBLIC) {
-                StorageVolumePreference ExStorageVolumePreference =
-                        new StorageVolumePreference(context, vol, COLOR_PUBLIC, 0);
 
-                //Disable preference when in change
-                ExStorageVolumePreference.setEnabled(vol.getState()!= VolumeInfo.STATE_CHECKING
-                    && vol.getState() != VolumeInfo.STATE_EJECTING);
-                mExternalCategory.addPreference(ExStorageVolumePreference);
+                if (vol.getState() == VolumeInfo.STATE_UNMOUNTABLE) {
+                    mInternalCategory.addPreference(
+                            new StorageVolumePreference(context, vol, 0));
+                } else {
+                    final long volumeTotalBytes = PrivateStorageInfo.getTotalSize(vol,
+                            sTotalInternalStorage);
+                    mInternalCategory.addPreference(
+                            new StorageVolumePreference(context, vol, volumeTotalBytes));
+                }
+            } else if (vol.getType() == VolumeInfo.TYPE_PUBLIC
+                    || vol.getType() == VolumeInfo.TYPE_STUB) {
+                mExternalCategory.addPreference(
+                        new StorageVolumePreference(context, vol, 0));
             }
         }
 
@@ -197,15 +193,11 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
             if (rec.getType() == VolumeInfo.TYPE_PRIVATE
                     && mStorageManager.findVolumeByUuid(rec.getFsUuid()) == null) {
                 // TODO: add actual storage type to record
-                final Drawable icon = context.getDrawable(R.drawable.ic_sim_sd);
-                icon.mutate();
-                icon.setTint(COLOR_PUBLIC);
-
                 final Preference pref = new Preference(context);
                 pref.setKey(rec.getFsUuid());
                 pref.setTitle(rec.getNickname());
                 pref.setSummary(com.android.internal.R.string.ext_media_status_missing);
-                pref.setIcon(icon);
+                pref.setIcon(R.drawable.ic_sim_sd);
                 mInternalCategory.addPreference(pref);
             }
         }
@@ -238,15 +230,18 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
         if (mInternalCategory.getPreferenceCount() == 2
                 && mExternalCategory.getPreferenceCount() == 0) {
             // Only showing primary internal storage, so just shortcut
-            final Bundle args = new Bundle();
-            args.putString(VolumeInfo.EXTRA_VOLUME_ID, VolumeInfo.ID_PRIVATE_INTERNAL);
-            PrivateVolumeSettings.setVolumeSize(args, sTotalInternalStorage);
-            Intent intent = Utils.onBuildStartFragmentIntent(getActivity(),
-                    PrivateVolumeSettings.class.getName(), args, null, R.string.apps_storage, null,
-                    false);
-            intent.putExtra(SettingsDrawerActivity.EXTRA_SHOW_MENU, true);
-            getActivity().startActivity(intent);
-            finish();
+            if (!mHasLaunchedPrivateVolumeSettings) {
+                mHasLaunchedPrivateVolumeSettings = true;
+                final Bundle args = new Bundle();
+                args.putString(VolumeInfo.EXTRA_VOLUME_ID, VolumeInfo.ID_PRIVATE_INTERNAL);
+                new SubSettingLauncher(getActivity())
+                        .setDestination(StorageDashboardFragment.class.getName())
+                        .setArguments(args)
+                        .setTitleRes(R.string.storage_settings)
+                        .setSourceMetricsCategory(getMetricsCategory())
+                        .launch();
+                finish();
+            }
         }
     }
 
@@ -283,28 +278,35 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
             }
 
             if (vol.getType() == VolumeInfo.TYPE_PRIVATE) {
-                final List<VolumeInfo> volumes = mStorageManager.getVolumes();
-                long primaryPhysicalTotalSpace =
-                        PrivateStorageInfo.getPrimaryPhysicalTotalSpace(volumes);
                 final Bundle args = new Bundle();
                 args.putString(VolumeInfo.EXTRA_VOLUME_ID, vol.getId());
-                PrivateVolumeSettings.setVolumeSize(args, PrivateStorageInfo.getTotalSize(vol,
-                        sTotalInternalStorage) - primaryPhysicalTotalSpace);
-                startFragment(this, PrivateVolumeSettings.class.getCanonicalName(),
-                        -1, 0, args);
+
+                if (VolumeInfo.ID_PRIVATE_INTERNAL.equals(vol.getId())) {
+                    new SubSettingLauncher(getContext())
+                            .setDestination(StorageDashboardFragment.class.getCanonicalName())
+                            .setTitleRes(R.string.storage_settings)
+                            .setSourceMetricsCategory(getMetricsCategory())
+                            .setArguments(args)
+                            .launch();
+                } else {
+                    // TODO: Go to the StorageDashboardFragment once it fully handles all of the
+                    //       SD card cases and other private internal storage cases.
+                    PrivateVolumeSettings.setVolumeSize(args, PrivateStorageInfo.getTotalSize(vol,
+                            sTotalInternalStorage));
+                    new SubSettingLauncher(getContext())
+                            .setDestination(PrivateVolumeSettings.class.getCanonicalName())
+                            .setTitleRes(-1)
+                            .setSourceMetricsCategory(getMetricsCategory())
+                            .setArguments(args)
+                            .launch();
+                }
+
                 return true;
 
             } else if (vol.getType() == VolumeInfo.TYPE_PUBLIC) {
-                if (vol.isMountedReadable()) {
-                    startActivity(vol.buildBrowseIntent());
-                    return true;
-                } else {
-                    final Bundle args = new Bundle();
-                    args.putString(VolumeInfo.EXTRA_VOLUME_ID, vol.getId());
-                    startFragment(this, PublicVolumeSettings.class.getCanonicalName(),
-                            -1, 0, args);
-                    return true;
-                }
+                return handlePublicVolumeClick(getContext(), vol);
+            } else if (vol.getType() == VolumeInfo.TYPE_STUB) {
+                return handleStubVolumeClick(getContext(), vol);
             }
 
         } else if (key.startsWith("disk:")) {
@@ -316,12 +318,45 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
             // Picked a missing private volume
             final Bundle args = new Bundle();
             args.putString(VolumeRecord.EXTRA_FS_UUID, key);
-            startFragment(this, PrivateVolumeForget.class.getCanonicalName(),
-                    R.string.storage_menu_forget, 0, args);
+            new SubSettingLauncher(getContext())
+                    .setDestination(PrivateVolumeForget.class.getCanonicalName())
+                    .setTitleRes(R.string.storage_menu_forget)
+                    .setSourceMetricsCategory(getMetricsCategory())
+                    .setArguments(args)
+                    .launch();
             return true;
         }
 
         return false;
+    }
+
+    @VisibleForTesting
+    static boolean handleStubVolumeClick(Context context, VolumeInfo vol) {
+        final Intent intent = vol.buildBrowseIntent();
+        if (vol.isMountedReadable() && intent != null) {
+            context.startActivity(intent);
+            return true;
+        }
+        return false;
+    }
+
+    @VisibleForTesting
+    static boolean handlePublicVolumeClick(Context context, VolumeInfo vol) {
+        final Intent intent = vol.buildBrowseIntent();
+        if (vol.isMountedReadable() && intent != null) {
+            context.startActivity(intent);
+            return true;
+        } else {
+            final Bundle args = new Bundle();
+            args.putString(VolumeInfo.EXTRA_VOLUME_ID, vol.getId());
+            new SubSettingLauncher(context)
+                    .setDestination(PublicVolumeSettings.class.getCanonicalName())
+                    .setTitleRes(-1)
+                    .setSourceMetricsCategory(METRICS_CATEGORY)
+                    .setArguments(args)
+                    .launch();
+            return true;
+        }
     }
 
     public static class MountTask extends AsyncTask<Void, Void, Exception> {
@@ -396,7 +431,7 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
         }
     }
 
-    public static class VolumeUnmountedFragment extends DialogFragment {
+    public static class VolumeUnmountedFragment extends InstrumentedDialogFragment {
         public static void show(Fragment parent, String volumeId) {
             final Bundle args = new Bundle();
             args.putString(VolumeInfo.EXTRA_VOLUME_ID, volumeId);
@@ -405,6 +440,11 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
             dialog.setArguments(args);
             dialog.setTargetFragment(parent, 0);
             dialog.show(parent.getFragmentManager(), TAG_VOLUME_UNMOUNTED);
+        }
+
+        @Override
+        public int getMetricsCategory() {
+            return SettingsEnums.DIALOG_VOLUME_UNMOUNT;
         }
 
         @Override
@@ -421,47 +461,58 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
 
             builder.setPositiveButton(R.string.storage_menu_mount,
                     new DialogInterface.OnClickListener() {
-                /**
-                 * Check if an {@link RestrictedLockUtils#sendShowAdminSupportDetailsIntent admin
-                 * details intent} should be shown for the restriction and show it.
-                 *
-                 * @param restriction The restriction to check
-                 * @return {@code true} iff a intent was shown.
-                 */
-                private boolean wasAdminSupportIntentShown(@NonNull String restriction) {
-                    EnforcedAdmin admin = RestrictedLockUtils.checkIfRestrictionEnforced(
-                            getActivity(), restriction, UserHandle.myUserId());
-                    boolean hasBaseUserRestriction = RestrictedLockUtils.hasBaseUserRestriction(
-                            getActivity(), restriction, UserHandle.myUserId());
-                    if (admin != null && !hasBaseUserRestriction) {
-                        RestrictedLockUtils.sendShowAdminSupportDetailsIntent(getActivity(), admin);
-                        return true;
-                    }
+                        /**
+                         * Check if an {@link
+                         * RestrictedLockUtils#sendShowAdminSupportDetailsIntent admin
+                         * details intent} should be shown for the restriction and show it.
+                         *
+                         * @param restriction The restriction to check
+                         * @return {@code true} iff a intent was shown.
+                         */
+                        private boolean wasAdminSupportIntentShown(@NonNull String restriction) {
+                            EnforcedAdmin admin = RestrictedLockUtilsInternal
+                                    .checkIfRestrictionEnforced(getActivity(), restriction,
+                                            UserHandle.myUserId());
+                            boolean hasBaseUserRestriction =
+                                    RestrictedLockUtilsInternal.hasBaseUserRestriction(
+                                            getActivity(), restriction, UserHandle.myUserId());
+                            if (admin != null && !hasBaseUserRestriction) {
+                                RestrictedLockUtils.sendShowAdminSupportDetailsIntent(getActivity(),
+                                        admin);
+                                return true;
+                            }
 
-                    return false;
-                }
+                            return false;
+                        }
 
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    if (wasAdminSupportIntentShown(UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA)) {
-                        return;
-                    }
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            if (wasAdminSupportIntentShown(
+                                    UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA)) {
+                                return;
+                            }
 
-                    if (vol.disk != null && vol.disk.isUsb() &&
-                            wasAdminSupportIntentShown(UserManager.DISALLOW_USB_FILE_TRANSFER)) {
-                        return;
-                    }
+                            if (vol.disk != null && vol.disk.isUsb() &&
+                                    wasAdminSupportIntentShown(
+                                            UserManager.DISALLOW_USB_FILE_TRANSFER)) {
+                                return;
+                            }
 
-                    new MountTask(context, vol).execute();
-                }
-            });
+                            new MountTask(context, vol).execute();
+                        }
+                    });
             builder.setNegativeButton(R.string.cancel, null);
 
             return builder.create();
         }
     }
 
-    public static class DiskInitFragment extends DialogFragment {
+    public static class DiskInitFragment extends InstrumentedDialogFragment {
+        @Override
+        public int getMetricsCategory() {
+            return SettingsEnums.DIALOG_VOLUME_INIT;
+        }
+
         public static void show(Fragment parent, int resId, String diskId) {
             final Bundle args = new Bundle();
             args.putInt(Intent.EXTRA_TEXT, resId);
@@ -487,128 +538,155 @@ public class StorageSettings extends SettingsPreferenceFragment implements Index
 
             builder.setPositiveButton(R.string.storage_menu_set_up,
                     new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    final Intent intent = new Intent(context, StorageWizardInit.class);
-                    intent.putExtra(DiskInfo.EXTRA_DISK_ID, diskId);
-                    startActivity(intent);
-                }
-            });
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            final Intent intent = new Intent(context, StorageWizardInit.class);
+                            intent.putExtra(DiskInfo.EXTRA_DISK_ID, diskId);
+                            startActivity(intent);
+                        }
+                    });
             builder.setNegativeButton(R.string.cancel, null);
 
             return builder.create();
         }
     }
 
-    private static class SummaryProvider implements SummaryLoader.SummaryProvider {
-        private final Context mContext;
-        private final SummaryLoader mLoader;
+    /** Enable indexing of searchable data */
+    public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
+            new BaseSearchIndexProvider() {
+                @Override
+                public List<SearchIndexableRaw> getRawDataToIndex(
+                        Context context, boolean enabled) {
+                    final List<SearchIndexableRaw> result = new ArrayList<>();
 
-        private SummaryProvider(Context context, SummaryLoader loader) {
-            mContext = context;
-            mLoader = loader;
-        }
+                    SearchIndexableRaw data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.storage_settings);
+                    data.key = KEY_STORAGE_SETTINGS;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    data.keywords = context.getString(R.string.keywords_storage_settings);
+                    result.add(data);
 
-        @Override
-        public void setListening(boolean listening) {
-            if (listening) {
-                updateSummary();
-            }
-        }
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.internal_storage);
+                    data.key = KEY_INTERNAL_STORAGE;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    result.add(data);
 
-        private void updateSummary() {
-            // TODO: Register listener.
-            final StorageManager storageManager = mContext.getSystemService(StorageManager.class);
-            PrivateStorageInfo info = PrivateStorageInfo.getPrivateStorageInfo(
-                    new StorageManagerVolumeProvider(storageManager));
-            long privateUsedBytes = info.totalBytes - info.freeBytes;
-            mLoader.setSummary(this, mContext.getString(R.string.storage_summary,
-                    Formatter.formatFileSize(mContext, privateUsedBytes),
-                    Formatter.formatFileSize(mContext, info.totalBytes)));
-        }
-    }
-
-
-    public static final SummaryLoader.SummaryProviderFactory SUMMARY_PROVIDER_FACTORY
-            = new SummaryLoader.SummaryProviderFactory() {
-        @Override
-        public SummaryLoader.SummaryProvider createSummaryProvider(Activity activity,
-                                                                   SummaryLoader summaryLoader) {
-            return new SummaryProvider(activity, summaryLoader);
-        }
-    };
-
-    /**
-     * Enable indexing of searchable data
-     */
-    public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
-        new BaseSearchIndexProvider() {
-            @Override
-            public List<SearchIndexableRaw> getRawDataToIndex(Context context, boolean enabled) {
-                final List<SearchIndexableRaw> result = new ArrayList<SearchIndexableRaw>();
-
-                SearchIndexableRaw data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.storage_settings);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
-
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.internal_storage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
-
-                data = new SearchIndexableRaw(context);
-                final StorageManager storage = context.getSystemService(StorageManager.class);
-                final List<VolumeInfo> vols = storage.getVolumes();
-                for (VolumeInfo vol : vols) {
-                    if (isInteresting(vol)) {
-                        data.title = storage.getBestVolumeDescription(vol);
-                        data.screenTitle = context.getString(R.string.storage_settings);
-                        result.add(data);
+                    data = new SearchIndexableRaw(context);
+                    final StorageManager storage = context.getSystemService(StorageManager.class);
+                    final List<VolumeInfo> vols = storage.getVolumes();
+                    for (VolumeInfo vol : vols) {
+                        if (isInteresting(vol)) {
+                            data.title = storage.getBestVolumeDescription(vol);
+                            data.key = KEY_STORAGE_SETTINGS_VOLUME + vol.id;
+                            data.screenTitle = context.getString(R.string.storage_settings);
+                            result.add(data);
+                        }
                     }
+
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.memory_size);
+                    data.key = KEY_STORAGE_SETTINGS_MEMORY_SIZE;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    result.add(data);
+
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.memory_available);
+                    data.key = KEY_STORAGE_SETTINGS_MEMORY;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    result.add(data);
+
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.memory_dcim_usage);
+                    data.key = KEY_STORAGE_SETTINGS_DCIM;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    result.add(data);
+
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.memory_music_usage);
+                    data.key = KEY_STORAGE_SETTINGS_MUSIC;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    result.add(data);
+
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.memory_media_misc_usage);
+                    data.key = KEY_STORAGE_SETTINGS_MISC;
+                    data.screenTitle = context.getString(R.string.storage_settings);
+                    result.add(data);
+
+                    data = new SearchIndexableRaw(context);
+                    data.title = context.getString(R.string.storage_menu_free);
+                    data.key = KEY_STORAGE_SETTINGS_FREE_SPACE;
+                    data.screenTitle = context.getString(R.string.storage_menu_free);
+                    data.intentAction = StorageManager.ACTION_MANAGE_STORAGE;
+                    data.keywords = context.getString(R.string.keywords_storage_menu_free);
+                    result.add(data);
+
+                    return result;
                 }
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_size);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
+                @Override
+                public List<String> getNonIndexableKeys(Context context) {
+                    final List<String> niks = super.getNonIndexableKeys(context);
+                    if (isExternalExist(context)) {
+                        niks.add(KEY_STORAGE_SETTINGS);
+                        niks.add(KEY_INTERNAL_STORAGE);
+                        niks.add(KEY_STORAGE_SETTINGS_MEMORY_SIZE);
+                        niks.add(KEY_STORAGE_SETTINGS_MEMORY);
+                        niks.add(KEY_STORAGE_SETTINGS_DCIM);
+                        niks.add(KEY_STORAGE_SETTINGS_MUSIC);
+                        niks.add(KEY_STORAGE_SETTINGS_MISC);
+                        niks.add(KEY_STORAGE_SETTINGS_FREE_SPACE);
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_available);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
+                        final StorageManager storage = context.getSystemService(
+                                StorageManager.class);
+                        final List<VolumeInfo> vols = storage.getVolumes();
+                        for (VolumeInfo vol : vols) {
+                            if (isInteresting(vol)) {
+                                niks.add(KEY_STORAGE_SETTINGS_VOLUME + vol.id);
+                            }
+                        }
+                    }
+                    return niks;
+                }
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_apps_usage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
+                @Override
+                protected boolean isPageSearchEnabled(Context context) {
+                    return !isExternalExist(context);
+                }
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_dcim_usage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
+                private boolean isExternalExist(Context context) {
+                    int internalCount = 0;
+                    StorageManager storageManager = context.getSystemService(StorageManager.class);
+                    final List<VolumeInfo> volumes = storageManager.getVolumes();
+                    for (VolumeInfo vol : volumes) {
+                        //External storage
+                        if (vol.getType() == VolumeInfo.TYPE_PUBLIC
+                                || vol.getType() == VolumeInfo.TYPE_STUB) {
+                            return true;
+                        } else if (vol.getType() == VolumeInfo.TYPE_PRIVATE) {
+                            internalCount++;
+                        }
+                    }
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_music_usage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
+                    // Unsupported disks
+                    final List<DiskInfo> disks = storageManager.getDisks();
+                    for (DiskInfo disk : disks) {
+                        if (disk.volumeCount == 0 && disk.size > 0) {
+                            return true;
+                        }
+                    }
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_downloads_usage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
+                    // Missing private volumes
+                    final List<VolumeRecord> recs = storageManager.getVolumeRecords();
+                    for (VolumeRecord rec : recs) {
+                        if (rec.getType() == VolumeInfo.TYPE_PRIVATE
+                                && storageManager.findVolumeByUuid(rec.getFsUuid()) == null) {
+                            internalCount++;
+                        }
+                    }
 
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_media_cache_usage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
-
-                data = new SearchIndexableRaw(context);
-                data.title = context.getString(R.string.memory_media_misc_usage);
-                data.screenTitle = context.getString(R.string.storage_settings);
-                result.add(data);
-
-                return result;
-            }
-        };
+                    return (internalCount != 1);
+                }
+            };
 }

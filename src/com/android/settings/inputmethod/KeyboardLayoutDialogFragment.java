@@ -17,15 +17,11 @@
 package com.android.settings.inputmethod;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
-import android.app.DialogFragment;
-import android.app.LoaderManager.LoaderCallbacks;
-import android.content.AsyncTaskLoader;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.Loader;
 import android.hardware.input.InputDeviceIdentifier;
 import android.hardware.input.InputManager;
 import android.hardware.input.InputManager.InputDeviceListener;
@@ -40,12 +36,18 @@ import android.widget.CheckedTextView;
 import android.widget.RadioButton;
 import android.widget.TextView;
 
+import androidx.appcompat.app.AlertDialog;
+import androidx.loader.app.LoaderManager.LoaderCallbacks;
+import androidx.loader.content.AsyncTaskLoader;
+import androidx.loader.content.Loader;
+
 import com.android.settings.R;
+import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 
 import java.util.ArrayList;
 import java.util.Collections;
 
-public class KeyboardLayoutDialogFragment extends DialogFragment
+public class KeyboardLayoutDialogFragment extends InstrumentedDialogFragment
         implements InputDeviceListener, LoaderCallbacks<KeyboardLayoutDialogFragment.Keyboards> {
     private static final String KEY_INPUT_DEVICE_IDENTIFIER = "inputDeviceIdentifier";
 
@@ -53,13 +55,18 @@ public class KeyboardLayoutDialogFragment extends DialogFragment
     private int mInputDeviceId = -1;
     private InputManager mIm;
     private KeyboardLayoutAdapter mAdapter;
-    private boolean mHasShownLayoutSelectionScreen;
 
     public KeyboardLayoutDialogFragment() {
     }
 
     public KeyboardLayoutDialogFragment(InputDeviceIdentifier inputDeviceIdentifier) {
         mInputDeviceIdentifier = inputDeviceIdentifier;
+    }
+
+
+    @Override
+    public int getMetricsCategory() {
+        return SettingsEnums.DIALOG_KEYBOARD_LAYOUT;
     }
 
     @Override
@@ -150,7 +157,7 @@ public class KeyboardLayoutDialogFragment extends DialogFragment
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        show(getActivity().getFragmentManager(), "layout");
+        show(getActivity().getSupportFragmentManager(), "layout");
     }
 
     private void onKeyboardLayoutClicked(int which) {
@@ -179,7 +186,6 @@ public class KeyboardLayoutDialogFragment extends DialogFragment
             dialog.getListView().setItemChecked(data.current, true);
         }
         updateSwitchHintVisibility();
-        showSetupKeyboardLayoutsIfNecessary();
     }
 
     @Override
@@ -209,19 +215,8 @@ public class KeyboardLayoutDialogFragment extends DialogFragment
     private void updateSwitchHintVisibility() {
         AlertDialog dialog = (AlertDialog)getDialog();
         if (dialog != null) {
-            View customPanel = dialog.findViewById(com.android.internal.R.id.customPanel);
+            View customPanel = dialog.findViewById(R.id.customPanel);
             customPanel.setVisibility(mAdapter.getCount() > 1 ? View.VISIBLE : View.GONE);
-        }
-    }
-
-    private void showSetupKeyboardLayoutsIfNecessary() {
-        AlertDialog dialog = (AlertDialog)getDialog();
-        if (dialog != null
-                && mAdapter.getCount() == 1 && mAdapter.getItem(0) == null
-                && !mHasShownLayoutSelectionScreen) {
-            mHasShownLayoutSelectionScreen = true;
-            ((OnSetupKeyboardLayoutsListener)getTargetFragment()).onSetupKeyboardLayouts(
-                    mInputDeviceIdentifier);
         }
     }
 

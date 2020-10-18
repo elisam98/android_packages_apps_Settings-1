@@ -16,9 +16,9 @@
 
 package com.android.settings.wifi;
 
+import android.app.settings.SettingsEnums;
 import android.os.Bundle;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
 
@@ -35,7 +35,7 @@ public class WifiInfo extends SettingsPreferenceFragment {
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.TESTING;
+    public int getMetricsCategory() {
+        return SettingsEnums.TESTING;
     }
 }

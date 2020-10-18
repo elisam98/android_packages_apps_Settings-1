@@ -14,12 +14,14 @@
      limitations under the License.
 -->
 
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-    android:title="@string/data_usage_summary_title">
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:settings="http://schemas.android.com/apk/res-auto"
+    android:title="@string/billing_cycle">
 
     <Preference
         android:key="billing_cycle"
-        android:title="@string/billing_cycle" />
+        android:title="@string/app_usage_cycle" />
 
     <SwitchPreference
         android:key="set_data_warning"
@@ -37,8 +39,10 @@
         android:key="data_limit"
         android:title="@string/data_limit" />
 
-    <SwitchPreference
-        android:key="set_data_time_range"
-        android:title="@string/set_data_time_range" />
+    <com.android.settingslib.widget.FooterPreference
+        android:key="billing_cycle_footer"
+        android:title="@string/data_warning_footnote"
+        android:selectable="false"
+        settings:searchable="false"/>
 
 </PreferenceScreen>

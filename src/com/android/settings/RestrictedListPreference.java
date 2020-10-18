@@ -16,12 +16,14 @@
 
 package com.android.settings;
 
-import android.app.AlertDialog;
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.Bundle;
-import android.support.v14.preference.ListPreferenceDialogFragment;
-import android.support.v7.preference.PreferenceViewHolder;
+import android.os.UserManager;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,17 +34,22 @@ import android.widget.ImageView;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AlertDialog.Builder;
+import androidx.preference.ListPreferenceDialogFragmentCompat;
+import androidx.preference.PreferenceViewHolder;
+
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedPreferenceHelper;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
-
 public class RestrictedListPreference extends CustomListPreference {
     private final RestrictedPreferenceHelper mHelper;
     private final List<RestrictedItem> mRestrictedItems = new ArrayList<>();
+    private boolean mRequiresActiveUnlockedProfile = false;
+    private int mProfileUserId;
 
     public RestrictedListPreference(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -68,6 +75,24 @@ public class RestrictedListPreference extends CustomListPreference {
 
     @Override
     public void performClick() {
+        if (mRequiresActiveUnlockedProfile) {
+            // Check if the profile is started, first.
+            if (Utils.startQuietModeDialogIfNecessary(getContext(), UserManager.get(getContext()),
+                    mProfileUserId)) {
+                return;
+            }
+
+            // Next, check if the profile is unlocked.
+            KeyguardManager manager =
+                    (KeyguardManager) getContext().getSystemService(Context.KEYGUARD_SERVICE);
+            if (manager.isDeviceLocked(mProfileUserId)) {
+                Intent intent = manager.createConfirmDeviceCredentialIntent(
+                        null, null, mProfileUserId);
+                getContext().startActivity(intent);
+                return;
+            }
+        }
+
         if (!mHelper.performClick()) {
             super.performClick();
         }
@@ -90,6 +115,14 @@ public class RestrictedListPreference extends CustomListPreference {
 
     public boolean isDisabledByAdmin() {
         return mHelper.isDisabledByAdmin();
+    }
+
+    public void setRequiresActiveUnlockedProfile(boolean reqState) {
+        mRequiresActiveUnlockedProfile = reqState;
+    }
+
+    public void setProfileUserId(int profileUserId) {
+        mProfileUserId = profileUserId;
     }
 
     public boolean isRestrictedForEntry(CharSequence entry) {
@@ -124,8 +157,8 @@ public class RestrictedListPreference extends CustomListPreference {
         return null;
     }
 
-    protected ListAdapter createListAdapter() {
-        return new RestrictedArrayAdapter(getContext(), getEntries(),
+    protected ListAdapter createListAdapter(Context context) {
+        return new RestrictedArrayAdapter(context, getEntries(),
                 getSelectedValuePos());
     }
 
@@ -137,11 +170,10 @@ public class RestrictedListPreference extends CustomListPreference {
     }
 
     @Override
-    protected void onPrepareDialogBuilder(AlertDialog.Builder builder,
+    protected void onPrepareDialogBuilder(Builder builder,
             DialogInterface.OnClickListener listener) {
-        builder.setAdapter(createListAdapter(), listener);
+        builder.setAdapter(createListAdapter(builder.getContext()), listener);
     }
-
 
     public class RestrictedArrayAdapter extends ArrayAdapter<CharSequence> {
         private final int mSelectedIndex;
@@ -187,8 +219,8 @@ public class RestrictedListPreference extends CustomListPreference {
             CustomListPreference.CustomListPreferenceDialogFragment {
         private int mLastCheckedPosition = AdapterView.INVALID_POSITION;
 
-        public static ListPreferenceDialogFragment newInstance(String key) {
-            final ListPreferenceDialogFragment fragment
+        public static ListPreferenceDialogFragmentCompat newInstance(String key) {
+            final ListPreferenceDialogFragmentCompat fragment
                     = new RestrictedListPreferenceDialogFragment();
             final Bundle b = new Bundle(1);
             b.putString(ARG_KEY, key);

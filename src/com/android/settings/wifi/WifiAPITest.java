@@ -18,16 +18,17 @@ package com.android.settings.wifi;
 
 import static android.content.Context.WIFI_SERVICE;
 
-import android.app.AlertDialog;
+import android.app.settings.SettingsEnums;
 import android.content.DialogInterface;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
 import android.text.Editable;
 import android.widget.EditText;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.appcompat.app.AlertDialog;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
 
@@ -85,8 +86,8 @@ public class WifiAPITest extends SettingsPreferenceFragment implements
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.TESTING;
+    public int getMetricsCategory() {
+        return SettingsEnums.TESTING;
     }
 
     //============================

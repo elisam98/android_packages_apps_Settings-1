@@ -35,6 +35,4 @@ public class SubSettings extends SettingsActivity {
         Log.d("SubSettings", "Launching fragment " + fragmentName);
         return true;
     }
-    public static class BluetoothSubSettings extends SubSettings { /* empty */ }
-    public static class SavedAccessPointsSubSettings extends SubSettings { /* empty */ }
 }

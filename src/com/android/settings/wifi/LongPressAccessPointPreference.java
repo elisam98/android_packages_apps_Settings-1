@@ -15,28 +15,23 @@
  */
 package com.android.settings.wifi;
 
-import android.app.Fragment;
 import android.content.Context;
-import android.support.v7.preference.PreferenceViewHolder;
-import android.util.AttributeSet;
+
+import androidx.fragment.app.Fragment;
+import androidx.preference.PreferenceViewHolder;
+
 import com.android.settingslib.wifi.AccessPoint;
 import com.android.settingslib.wifi.AccessPointPreference;
 
+/**
+ * An AP preference for the currently connected AP.
+ *
+ * Migrating from Wi-Fi SettingsLib to to WifiTrackerLib, this object will be removed in the near
+ * future, please develop in {@link com.android.settingslib.wifi.LongPressWifiEntryPreference}.
+ */
 public class LongPressAccessPointPreference extends AccessPointPreference {
 
     private final Fragment mFragment;
-
-    // Used for dummy pref.
-    public LongPressAccessPointPreference(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        mFragment = null;
-    }
-
-    public LongPressAccessPointPreference(AccessPoint accessPoint, Context context,
-            UserBadgeCache cache, boolean forSavedNetworks, Fragment fragment) {
-        super(accessPoint, context, cache, forSavedNetworks);
-        mFragment = fragment;
-    }
 
     public LongPressAccessPointPreference(AccessPoint accessPoint, Context context,
             UserBadgeCache cache, boolean forSavedNetworks, int iconResId, Fragment fragment) {

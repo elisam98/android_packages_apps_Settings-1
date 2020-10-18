@@ -14,45 +14,86 @@
 
 package com.android.settings.datausage;
 
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.TypedArray;
+import android.net.ConnectivityManager;
 import android.net.NetworkTemplate;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.telephony.SubscriptionManager;
-import android.text.format.Formatter;
 import android.util.AttributeSet;
-import com.android.settings.Utils;
-import com.android.settingslib.net.DataUsageController;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.core.content.res.TypedArrayUtils;
+import androidx.preference.Preference;
+
 import com.android.settings.R;
+import com.android.settings.core.SubSettingLauncher;
+import com.android.settingslib.net.DataUsageController;
 
 public class DataUsagePreference extends Preference implements TemplatePreference {
 
     private NetworkTemplate mTemplate;
     private int mSubId;
+    private int mTitleRes;
 
     public DataUsagePreference(Context context, AttributeSet attrs) {
         super(context, attrs);
+        final TypedArray a = context.obtainStyledAttributes(
+                attrs, new int[] {com.android.internal.R.attr.title},
+                TypedArrayUtils.getAttr(
+                        context, androidx.preference.R.attr.preferenceStyle,
+                        android.R.attr.preferenceStyle), 0);
+        mTitleRes = a.getResourceId(0, 0);
+        a.recycle();
     }
 
     @Override
-    public void setTemplate(NetworkTemplate template, int subId,
-            NetworkServices services) {
+    public void setTemplate(NetworkTemplate template, int subId, NetworkServices services) {
         mTemplate = template;
         mSubId = subId;
-        DataUsageController controller = new DataUsageController(getContext());
-        DataUsageController.DataUsageInfo usageInfo = controller.getDataUsageInfo(mTemplate);
-        setSummary(getContext().getString(R.string.data_usage_template,
-                Formatter.formatFileSize(getContext(), usageInfo.usageLevel), usageInfo.period));
-        setIntent(getIntent());
+        final DataUsageController controller = getDataUsageController();
+        if (mTemplate.isMatchRuleMobile()) {
+            setTitle(R.string.app_cellular_data_usage);
+        } else {
+            final DataUsageController.DataUsageInfo usageInfo =
+                    controller.getDataUsageInfo(mTemplate);
+            setTitle(mTitleRes);
+            setSummary(getContext().getString(R.string.data_usage_template,
+                    DataUsageUtils.formatDataUsage(getContext(), usageInfo.usageLevel),
+                    usageInfo.period));
+        }
+        final long usageLevel = controller.getHistoricalUsageLevel(template);
+        if (usageLevel > 0L) {
+            setIntent(getIntent());
+        } else {
+            setIntent(null);
+            setEnabled(false);
+        }
     }
 
     @Override
     public Intent getIntent() {
-        Bundle args = new Bundle();
+        final Bundle args = new Bundle();
+        final SubSettingLauncher launcher;
         args.putParcelable(DataUsageList.EXTRA_NETWORK_TEMPLATE, mTemplate);
         args.putInt(DataUsageList.EXTRA_SUB_ID, mSubId);
-        return Utils.onBuildStartFragmentIntent(getContext(), DataUsageList.class.getName(), args,
-                getContext().getPackageName(), 0, getTitle(), false);
+        args.putInt(DataUsageList.EXTRA_NETWORK_TYPE, mTemplate.isMatchRuleMobile()
+            ? ConnectivityManager.TYPE_MOBILE : ConnectivityManager.TYPE_WIFI);
+        launcher = new SubSettingLauncher(getContext())
+            .setArguments(args)
+            .setDestination(DataUsageList.class.getName())
+            .setSourceMetricsCategory(SettingsEnums.PAGE_UNKNOWN);
+        if (mTemplate.isMatchRuleMobile()) {
+            launcher.setTitleRes(R.string.app_cellular_data_usage);
+        } else {
+            launcher.setTitleRes(mTitleRes);
+        }
+        return launcher.toIntent();
+    }
+
+    @VisibleForTesting
+    DataUsageController getDataUsageController() {
+        return new DataUsageController(getContext());
     }
 }

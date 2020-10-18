@@ -16,19 +16,24 @@
 
 package com.android.settings.bluetooth;
 
-import android.app.AlertDialog;
+import android.app.settings.SettingsEnums;
+import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.provider.Settings;
+import android.util.Log;
 import android.widget.Toast;
 
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
+
 import com.android.settings.R;
-import com.android.settings.bluetooth.DockService.DockBluetoothCallback;
-import com.android.settings.search.Index;
-import com.android.settings.search.SearchIndexableRaw;
+import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.bluetooth.BluetoothUtils;
+import com.android.settingslib.bluetooth.BluetoothUtils.ErrorListener;
 import com.android.settingslib.bluetooth.LocalBluetoothManager;
 import com.android.settingslib.bluetooth.LocalBluetoothManager.BluetoothManagerCallback;
-import com.android.settingslib.bluetooth.Utils.ErrorListener;
 
 /**
  * Utils is a helper class that contains constants for various
@@ -36,24 +41,27 @@ import com.android.settingslib.bluetooth.Utils.ErrorListener;
  * for creating dialogs.
  */
 public final class Utils {
-    static final boolean V = com.android.settingslib.bluetooth.Utils.V; // verbose logging
-    static final boolean D =  com.android.settingslib.bluetooth.Utils.D;  // regular logging
+
+    private static final String TAG = "BluetoothUtils";
+
+    static final boolean V = BluetoothUtils.V; // verbose logging
+    static final boolean D = BluetoothUtils.D;  // regular logging
 
     private Utils() {
     }
 
     public static int getConnectionStateSummary(int connectionState) {
         switch (connectionState) {
-        case BluetoothProfile.STATE_CONNECTED:
-            return R.string.bluetooth_connected;
-        case BluetoothProfile.STATE_CONNECTING:
-            return R.string.bluetooth_connecting;
-        case BluetoothProfile.STATE_DISCONNECTED:
-            return R.string.bluetooth_disconnected;
-        case BluetoothProfile.STATE_DISCONNECTING:
-            return R.string.bluetooth_disconnecting;
-        default:
-            return 0;
+            case BluetoothProfile.STATE_CONNECTED:
+                return R.string.bluetooth_connected;
+            case BluetoothProfile.STATE_CONNECTING:
+                return R.string.bluetooth_connecting;
+            case BluetoothProfile.STATE_DISCONNECTED:
+                return R.string.bluetooth_disconnected;
+            case BluetoothProfile.STATE_DISCONNECTING:
+                return R.string.bluetooth_disconnecting;
+            default:
+                return 0;
         }
     }
 
@@ -82,48 +90,48 @@ public final class Utils {
         return dialog;
     }
 
-    // TODO: wire this up to show connection errors...
-    static void showConnectingError(Context context, String name) {
-        // if (!mIsConnectingErrorPossible) {
-        //     return;
-        // }
-        // mIsConnectingErrorPossible = false;
-
-        showError(context, name, R.string.bluetooth_connecting_error_message);
+    @VisibleForTesting
+    static void showConnectingError(Context context, String name, LocalBluetoothManager manager) {
+        FeatureFactory.getFactory(context).getMetricsFeatureProvider().visible(context,
+                SettingsEnums.PAGE_UNKNOWN, SettingsEnums.ACTION_SETTINGS_BLUETOOTH_CONNECT_ERROR,
+                0);
+        showError(context, name, R.string.bluetooth_connecting_error_message, manager);
     }
 
     static void showError(Context context, String name, int messageResId) {
+        showError(context, name, messageResId, getLocalBtManager(context));
+    }
+
+    private static void showError(Context context, String name, int messageResId,
+            LocalBluetoothManager manager) {
         String message = context.getString(messageResId, name);
-        LocalBluetoothManager manager = getLocalBtManager(context);
         Context activity = manager.getForegroundActivity();
-        if(manager.isForegroundActivity()) {
-            new AlertDialog.Builder(activity)
-                .setTitle(R.string.bluetooth_error_title)
-                .setMessage(message)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
+        if (manager.isForegroundActivity()) {
+            try {
+                new AlertDialog.Builder(activity)
+                        .setTitle(R.string.bluetooth_error_title)
+                        .setMessage(message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+            } catch (Exception e) {
+                Log.e(TAG, "Cannot show error dialog.", e);
+            }
         } else {
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
         }
     }
 
-    /**
-     * Update the search Index for a specific class name and resources.
-     */
-    public static void updateSearchIndex(Context context, String className, String title,
-            String screenTitle, int iconResId, boolean enabled) {
-        SearchIndexableRaw data = new SearchIndexableRaw(context);
-        data.className = className;
-        data.title = title;
-        data.screenTitle = screenTitle;
-        data.iconResId = iconResId;
-        data.enabled = enabled;
-
-        Index.getInstance(context).updateFromSearchIndexableData(data);
-    }
-
     public static LocalBluetoothManager getLocalBtManager(Context context) {
         return LocalBluetoothManager.getInstance(context, mOnInitCallback);
+    }
+
+    public static String createRemoteName(Context context, BluetoothDevice device) {
+        String mRemoteName = device != null ? device.getAlias() : null;
+
+        if (mRemoteName == null) {
+            mRemoteName = context.getString(R.string.unknown);
+        }
+        return mRemoteName;
     }
 
     private static final ErrorListener mErrorListener = new ErrorListener() {
@@ -137,9 +145,12 @@ public final class Utils {
         @Override
         public void onBluetoothManagerInitialized(Context appContext,
                 LocalBluetoothManager bluetoothManager) {
-            bluetoothManager.getEventManager().registerCallback(
-                    new DockBluetoothCallback(appContext));
-            com.android.settingslib.bluetooth.Utils.setErrorListener(mErrorListener);
+            BluetoothUtils.setErrorListener(mErrorListener);
         }
     };
+
+    public static boolean isBluetoothScanningEnabled(Context context) {
+        return Settings.Global.getInt(context.getContentResolver(),
+                Settings.Global.BLE_SCAN_ALWAYS_AVAILABLE, 0) == 1;
+    }
 }

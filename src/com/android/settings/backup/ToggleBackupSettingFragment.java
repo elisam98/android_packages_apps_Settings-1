@@ -1,22 +1,23 @@
 package com.android.settings.backup;
 
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.backup.IBackupManager;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.provider.Settings;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.PreferenceViewHolder;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.appcompat.app.AlertDialog;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.PreferenceViewHolder;
+
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
 import com.android.settings.SettingsPreferenceFragment;
@@ -192,8 +193,8 @@ public class ToggleBackupSettingFragment extends SettingsPreferenceFragment
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.PRIVACY;
+    public int getMetricsCategory() {
+        return SettingsEnums.PRIVACY;
     }
 
     /**

@@ -18,35 +18,42 @@ package com.android.settings;
 
 import android.app.Activity;
 import android.app.Dialog;
-import android.app.DialogFragment;
-import android.app.Fragment;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.support.annotation.XmlRes;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceGroup;
-import android.support.v7.preference.PreferenceGroupAdapter;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.PreferenceViewHolder;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 
-import com.android.settings.applications.LayoutPreference;
-import com.android.settings.widget.FloatingActionButton;
-import com.android.settingslib.HelpUtils;
+import androidx.annotation.VisibleForTesting;
+import androidx.annotation.XmlRes;
+import androidx.fragment.app.DialogFragment;
+import androidx.fragment.app.Fragment;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceScreen;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.android.settings.core.InstrumentedPreferenceFragment;
+import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
+import com.android.settings.search.actionbar.SearchMenuController;
+import com.android.settings.support.actionbar.HelpMenuController;
+import com.android.settings.support.actionbar.HelpResourceProvider;
+import com.android.settings.widget.HighlightablePreferenceGroupAdapter;
+import com.android.settings.widget.LoadingViewController;
+import com.android.settingslib.CustomDialogPreferenceCompat;
+import com.android.settingslib.CustomEditTextPreferenceCompat;
+import com.android.settingslib.core.instrumentation.Instrumentable;
+import com.android.settingslib.search.Indexable;
+import com.android.settingslib.widget.LayoutPreference;
 
 import java.util.UUID;
 
@@ -54,89 +61,86 @@ import java.util.UUID;
  * Base class for Settings fragments, with some helper functions and dialog management.
  */
 public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceFragment
-        implements DialogCreatable {
-
-    /**
-     * The Help Uri Resource key. This can be passed as an extra argument when creating the
-     * Fragment.
-     **/
-    public static final String HELP_URI_RESOURCE_KEY = "help_uri_resource";
+        implements DialogCreatable, HelpResourceProvider, Indexable {
 
     private static final String TAG = "SettingsPreference";
 
-    private static final int DELAY_HIGHLIGHT_DURATION_MILLIS = 600;
-
     private static final String SAVE_HIGHLIGHTED_KEY = "android:preference_highlighted";
 
-    private SettingsDialogFragment mDialogFragment;
-
-    private String mHelpUri;
-
     private static final int ORDER_FIRST = -1;
-    private static final int ORDER_LAST = Integer.MAX_VALUE -1;
 
+    private SettingsDialogFragment mDialogFragment;
     // Cache the content resolver for async callbacks
     private ContentResolver mContentResolver;
-
-    private String mPreferenceKey;
-    private boolean mPreferenceHighlighted = false;
 
     private RecyclerView.Adapter mCurrentRootAdapter;
     private boolean mIsDataSetObserverRegistered = false;
     private RecyclerView.AdapterDataObserver mDataSetObserver =
             new RecyclerView.AdapterDataObserver() {
-        @Override
-        public void onChanged() {
-            onDataSetChanged();
-        }
-    };
+                @Override
+                public void onChanged() {
+                    onDataSetChanged();
+                }
 
-    private ViewGroup mPinnedHeaderFrameLayout;
-    private FloatingActionButton mFloatingActionButton;
-    private ViewGroup mButtonBar;
+                @Override
+                public void onItemRangeChanged(int positionStart, int itemCount) {
+                    onDataSetChanged();
+                }
+
+                @Override
+                public void onItemRangeChanged(int positionStart, int itemCount, Object payload) {
+                    onDataSetChanged();
+                }
+
+                @Override
+                public void onItemRangeInserted(int positionStart, int itemCount) {
+                    onDataSetChanged();
+                }
+
+                @Override
+                public void onItemRangeRemoved(int positionStart, int itemCount) {
+                    onDataSetChanged();
+                }
+
+                @Override
+                public void onItemRangeMoved(int fromPosition, int toPosition, int itemCount) {
+                    onDataSetChanged();
+                }
+            };
+
+    @VisibleForTesting
+    ViewGroup mPinnedHeaderFrameLayout;
 
     private LayoutPreference mHeader;
 
-    private LayoutPreference mFooter;
     private View mEmptyView;
     private LinearLayoutManager mLayoutManager;
-    private HighlightablePreferenceGroupAdapter mAdapter;
     private ArrayMap<String, Preference> mPreferenceCache;
     private boolean mAnimationAllowed;
+
+    @VisibleForTesting
+    public HighlightablePreferenceGroupAdapter mAdapter;
+    @VisibleForTesting
+    public boolean mPreferenceHighlighted = false;
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        SearchMenuController.init(this /* host */);
+        HelpMenuController.init(this /* host */);
 
         if (icicle != null) {
             mPreferenceHighlighted = icicle.getBoolean(SAVE_HIGHLIGHTED_KEY);
         }
-
-        // Prepare help url and enable menu if necessary
-        Bundle arguments = getArguments();
-        int helpResource;
-        if (arguments != null && arguments.containsKey(HELP_URI_RESOURCE_KEY)) {
-            helpResource = arguments.getInt(HELP_URI_RESOURCE_KEY);
-        } else {
-            helpResource = getHelpResource();
-        }
-        if (helpResource != 0) {
-            mHelpUri = getResources().getString(helpResource);
-        }
+        HighlightablePreferenceGroupAdapter.adjustInitialExpandedChildCount(this /* host */);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
         final View root = super.onCreateView(inflater, container, savedInstanceState);
-        mPinnedHeaderFrameLayout = (ViewGroup) root.findViewById(R.id.pinned_header);
-        mFloatingActionButton = (FloatingActionButton) root.findViewById(R.id.fab);
-        mButtonBar = (ViewGroup) root.findViewById(R.id.button_bar);
+        mPinnedHeaderFrameLayout = root.findViewById(R.id.pinned_header);
         return root;
-    }
-
-    @Override
-    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
     }
 
     @Override
@@ -145,25 +149,18 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         checkAvailablePrefs(getPreferenceScreen());
     }
 
-    private void checkAvailablePrefs(PreferenceGroup preferenceGroup) {
+    @VisibleForTesting
+    void checkAvailablePrefs(PreferenceGroup preferenceGroup) {
         if (preferenceGroup == null) return;
         for (int i = 0; i < preferenceGroup.getPreferenceCount(); i++) {
             Preference pref = preferenceGroup.getPreference(i);
             if (pref instanceof SelfAvailablePreference
                     && !((SelfAvailablePreference) pref).isAvailable(getContext())) {
-                preferenceGroup.removePreference(pref);
+                pref.setVisible(false);
             } else if (pref instanceof PreferenceGroup) {
                 checkAvailablePrefs((PreferenceGroup) pref);
             }
         }
-    }
-
-    public FloatingActionButton getFloatingActionButton() {
-        return mFloatingActionButton;
-    }
-
-    public ViewGroup getButtonBar() {
-        return mButtonBar;
     }
 
     public View setPinnedHeaderView(int layoutResId) {
@@ -179,11 +176,17 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         mPinnedHeaderFrameLayout.setVisibility(View.VISIBLE);
     }
 
+    public void showPinnedHeader(boolean show) {
+        mPinnedHeaderFrameLayout.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+    }
+
     @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
 
-        outState.putBoolean(SAVE_HIGHLIGHTED_KEY, mPreferenceHighlighted);
+        if (mAdapter != null) {
+            outState.putBoolean(SAVE_HIGHLIGHTED_KEY, mAdapter.isHighlightRequested());
+        }
     }
 
     @Override
@@ -195,12 +198,7 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
     @Override
     public void onResume() {
         super.onResume();
-
-        final Bundle args = getArguments();
-        if (args != null) {
-            mPreferenceKey = args.getString(SettingsActivity.EXTRA_FRAGMENT_ARG_KEY);
-            highlightPreferenceIfNeeded();
-        }
+        highlightPreferenceIfNeeded();
     }
 
     @Override
@@ -213,14 +211,11 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         unregisterObserverIfNeeded();
     }
 
-    public void showLoadingWhenEmpty() {
-        View loading = getView().findViewById(R.id.loading_container);
-        setEmptyView(loading);
-    }
-
     public void setLoading(boolean loading, boolean animate) {
-        View loading_container = getView().findViewById(R.id.loading_container);
-        Utils.handleLoadingContainer(loading_container, getListView(), !loading, animate);
+        View loadingContainer = getView().findViewById(R.id.loading_container);
+        LoadingViewController.handleLoadingContainer(loadingContainer, getListView(),
+                !loading /* done */,
+                animate);
     }
 
     public void registerObserverIfNeeded() {
@@ -246,9 +241,33 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
     }
 
     public void highlightPreferenceIfNeeded() {
-        if (isAdded() && !mPreferenceHighlighted &&!TextUtils.isEmpty(mPreferenceKey)) {
-            highlightPreference(mPreferenceKey);
+        if (!isAdded()) {
+            return;
         }
+        if (mAdapter != null) {
+            mAdapter.requestHighlight(getView(), getListView());
+        }
+    }
+
+    /**
+     * Returns initial expanded child count.
+     * <p/>
+     * Only override this method if the initial expanded child must be determined at run time.
+     */
+    public int getInitialExpandedChildCount() {
+        return 0;
+    }
+
+    /**
+     * Whether preference is allowing to be displayed to the user.
+     *
+     * @param preference to check if it can be displayed to the user (not hidding in expand area).
+     * @return {@code true} when preference is allowing to be displayed to the user.
+     * {@code false} when preference is hidden in expand area and not been displayed to the user.
+     */
+    protected boolean isPreferenceExpanded(Preference preference) {
+        return ((mAdapter == null)
+                || (mAdapter.getPreferenceAdapterPosition(preference) != RecyclerView.NO_POSITION));
     }
 
     protected void onDataSetChanged() {
@@ -260,17 +279,15 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         return mHeader;
     }
 
-    public LayoutPreference getFooterView() {
-        return mFooter;
-    }
-
     protected void setHeaderView(int resource) {
         mHeader = new LayoutPreference(getPrefContext(), resource);
+        mHeader.setSelectable(false);
         addPreferenceToTop(mHeader);
     }
 
     protected void setHeaderView(View view) {
         mHeader = new LayoutPreference(getPrefContext(), view);
+        mHeader.setSelectable(false);
         addPreferenceToTop(mHeader);
     }
 
@@ -278,29 +295,6 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         preference.setOrder(ORDER_FIRST);
         if (getPreferenceScreen() != null) {
             getPreferenceScreen().addPreference(preference);
-        }
-    }
-
-    protected void setFooterView(int resource) {
-        setFooterView(resource != 0 ? new LayoutPreference(getPrefContext(), resource) : null);
-    }
-
-    protected void setFooterView(View v) {
-        setFooterView(v != null ? new LayoutPreference(getPrefContext(), v) : null);
-    }
-
-    private void setFooterView(LayoutPreference footer) {
-        if (getPreferenceScreen() != null && mFooter != null) {
-            getPreferenceScreen().removePreference(mFooter);
-        }
-        if (footer != null) {
-            mFooter = footer;
-            mFooter.setOrder(ORDER_LAST);
-            if (getPreferenceScreen() != null) {
-                getPreferenceScreen().addPreference(mFooter);
-            }
-        } else {
-            mFooter = null;
         }
     }
 
@@ -315,18 +309,17 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
             if (mHeader != null) {
                 preferenceScreen.addPreference(mHeader);
             }
-            if (mFooter != null) {
-                preferenceScreen.addPreference(mFooter);
-            }
         }
     }
 
-    private void updateEmptyView() {
+    @VisibleForTesting
+    void updateEmptyView() {
         if (mEmptyView == null) return;
         if (getPreferenceScreen() != null) {
+            final View listContainer = getActivity().findViewById(android.R.id.list_container);
             boolean show = (getPreferenceScreen().getPreferenceCount()
-                    - (mHeader != null ? 1 : 0)
-                    - (mFooter != null ? 1 : 0)) <= 0;
+                    - (mHeader != null ? 1 : 0)) <= 0
+                    || (listContainer != null && listContainer.getVisibility() != View.VISIBLE);
             mEmptyView.setVisibility(show ? View.VISIBLE : View.GONE);
         } else {
             mEmptyView.setVisibility(View.VISIBLE);
@@ -345,24 +338,6 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         return mEmptyView;
     }
 
-    /**
-     * Return a valid ListView position or -1 if none is found
-     */
-    private int canUseListViewForHighLighting(String key) {
-        if (getListView() == null) {
-            return -1;
-        }
-
-        RecyclerView listView = getListView();
-        RecyclerView.Adapter adapter = listView.getAdapter();
-
-        if (adapter != null && adapter instanceof PreferenceGroupAdapter) {
-            return findListPositionFromKey((PreferenceGroupAdapter) adapter, key);
-        }
-
-        return -1;
-    }
-
     @Override
     public RecyclerView.LayoutManager onCreateLayoutManager() {
         mLayoutManager = new LinearLayoutManager(getContext());
@@ -371,7 +346,11 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
 
     @Override
     protected RecyclerView.Adapter onCreateAdapter(PreferenceScreen preferenceScreen) {
-        mAdapter = new HighlightablePreferenceGroupAdapter(preferenceScreen);
+        final Bundle arguments = getArguments();
+        mAdapter = new HighlightablePreferenceGroupAdapter(preferenceScreen,
+                arguments == null
+                        ? null : arguments.getString(SettingsActivity.EXTRA_FRAGMENT_ARG_KEY),
+                mPreferenceHighlighted);
         return mAdapter;
     }
 
@@ -380,7 +359,7 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
     }
 
     protected void cacheRemoveAllPrefs(PreferenceGroup group) {
-        mPreferenceCache = new ArrayMap<String, Preference>();
+        mPreferenceCache = new ArrayMap<>();
         final int N = group.getPreferenceCount();
         for (int i = 0; i < N; i++) {
             Preference p = group.getPreference(i);
@@ -406,53 +385,29 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         return mPreferenceCache != null ? mPreferenceCache.size() : 0;
     }
 
-    private void highlightPreference(String key) {
-        final int position = canUseListViewForHighLighting(key);
-        if (position >= 0) {
-            mPreferenceHighlighted = true;
-            mLayoutManager.scrollToPosition(position);
-
-            getView().postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    mAdapter.highlight(position);
-                }
-            }, DELAY_HIGHLIGHT_DURATION_MILLIS);
-        }
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
+    public boolean removePreference(String key) {
+        return removePreference(getPreferenceScreen(), key);
     }
 
-    private int findListPositionFromKey(PreferenceGroupAdapter adapter, String key) {
-        final int count = adapter.getItemCount();
-        for (int n = 0; n < count; n++) {
-            final Preference preference = adapter.getItem(n);
-            final String preferenceKey = preference.getKey();
-            if (preferenceKey != null && preferenceKey.equals(key)) {
-                return n;
+    @VisibleForTesting
+    boolean removePreference(PreferenceGroup group, String key) {
+        final int preferenceCount = group.getPreferenceCount();
+        for (int i = 0; i < preferenceCount; i++) {
+            final Preference preference = group.getPreference(i);
+            final String curKey = preference.getKey();
+
+            if (TextUtils.equals(curKey, key)) {
+                return group.removePreference(preference);
+            }
+
+            if (preference instanceof PreferenceGroup) {
+                if (removePreference((PreferenceGroup) preference, key)) {
+                    return true;
+                }
             }
         }
-        return -1;
-    }
-
-    protected void removePreference(String key) {
-        Preference pref = findPreference(key);
-        if (pref != null) {
-            getPreferenceScreen().removePreference(pref);
-        }
-    }
-
-    /**
-     * Override this if you want to show a help item in the menu, by returning the resource id.
-     * @return the resource id for the help url
-     */
-    protected int getHelpResource() {
-        return R.string.help_uri_default;
-    }
-
-    @Override
-    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        if (mHelpUri != null && getActivity() != null) {
-            HelpUtils.prepareHelpMenuItem(getActivity(), menu, mHelpUri, getClass().getName());
-        }
+        return false;
     }
 
     /*
@@ -507,12 +462,18 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         if (mDialogFragment != null) {
             Log.e(TAG, "Old dialog fragment not null!");
         }
-        mDialogFragment = new SettingsDialogFragment(this, dialogId);
+        mDialogFragment = SettingsDialogFragment.newInstance(this, dialogId);
         mDialogFragment.show(getChildFragmentManager(), Integer.toString(dialogId));
     }
 
+    @Override
     public Dialog onCreateDialog(int dialogId) {
         return null;
+    }
+
+    @Override
+    public int getDialogMetricsCategory(int dialogId) {
+        return 0;
     }
 
     protected void removeDialog(int dialogId) {
@@ -523,18 +484,6 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
             mDialogFragment.dismissAllowingStateLoss();
         }
         mDialogFragment = null;
-    }
-
-    protected void removeDialog(int dialogId, boolean stateLossAllowed) {
-        if (stateLossAllowed) {
-            if (mDialogFragment != null && mDialogFragment.getDialogId() == dialogId) {
-                getFragmentManager().beginTransaction().remove(mDialogFragment).
-                        commitAllowingStateLoss();
-            }
-            mDialogFragment = null;
-        } else {
-            removeDialog(dialogId);
-        }
     }
 
     /**
@@ -576,11 +525,11 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         } else if (preference instanceof CustomListPreference) {
             f = CustomListPreference.CustomListPreferenceDialogFragment
                     .newInstance(preference.getKey());
-        } else if (preference instanceof CustomDialogPreference) {
-            f = CustomDialogPreference.CustomPreferenceDialogFragment
+        } else if (preference instanceof CustomDialogPreferenceCompat) {
+            f = CustomDialogPreferenceCompat.CustomPreferenceDialogFragment
                     .newInstance(preference.getKey());
-        } else if (preference instanceof CustomEditTextPreference) {
-            f = CustomEditTextPreference.CustomPreferenceDialogFragment
+        } else if (preference instanceof CustomEditTextPreferenceCompat) {
+            f = CustomEditTextPreferenceCompat.CustomPreferenceDialogFragment
                     .newInstance(preference.getKey());
         } else {
             super.onDisplayPreferenceDialog(preference);
@@ -591,28 +540,39 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         onDialogShowing();
     }
 
-    public static class SettingsDialogFragment extends DialogFragment {
+    public static class SettingsDialogFragment extends InstrumentedDialogFragment {
         private static final String KEY_DIALOG_ID = "key_dialog_id";
         private static final String KEY_PARENT_FRAGMENT_ID = "key_parent_fragment_id";
-
-        private int mDialogId;
 
         private Fragment mParentFragment;
 
         private DialogInterface.OnCancelListener mOnCancelListener;
         private DialogInterface.OnDismissListener mOnDismissListener;
 
-        public SettingsDialogFragment() {
-            /* do nothing */
-        }
-
-        public SettingsDialogFragment(DialogCreatable fragment, int dialogId) {
-            mDialogId = dialogId;
+        public static SettingsDialogFragment newInstance(DialogCreatable fragment, int dialogId) {
             if (!(fragment instanceof Fragment)) {
                 throw new IllegalArgumentException("fragment argument must be an instance of "
                         + Fragment.class.getName());
             }
-            mParentFragment = (Fragment) fragment;
+
+            final SettingsDialogFragment settingsDialogFragment = new SettingsDialogFragment();
+            settingsDialogFragment.setParentFragment(fragment);
+            settingsDialogFragment.setDialogId(dialogId);
+
+            return settingsDialogFragment;
+        }
+
+        @Override
+        public int getMetricsCategory() {
+            if (mParentFragment == null) {
+                return Instrumentable.METRICS_CATEGORY_UNKNOWN;
+            }
+            final int metricsCategory =
+                    ((DialogCreatable) mParentFragment).getDialogMetricsCategory(mDialogId);
+            if (metricsCategory <= 0) {
+                throw new IllegalStateException("Dialog must provide a metrics category");
+            }
+            return metricsCategory;
         }
 
         @Override
@@ -691,14 +651,22 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
                 }
             }
         }
+
+        private void setParentFragment(DialogCreatable fragment) {
+            mParentFragment = (Fragment) fragment;
+        }
+
+        private void setDialogId(int dialogId) {
+            mDialogId = dialogId;
+        }
     }
 
     protected boolean hasNextButton() {
-        return ((ButtonBarHandler)getActivity()).hasNextButton();
+        return ((ButtonBarHandler) getActivity()).hasNextButton();
     }
 
     protected Button getNextButton() {
-        return ((ButtonBarHandler)getActivity()).getNextButton();
+        return ((ButtonBarHandler) getActivity()).getNextButton();
     }
 
     public void finish() {
@@ -732,55 +700,8 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
         getActivity().setResult(result);
     }
 
-    protected final Context getPrefContext() {
-        return getPreferenceManager().getContext();
-    }
-
-    public boolean startFragment(Fragment caller, String fragmentClass, int titleRes,
-            int requestCode, Bundle extras) {
+    protected boolean isFinishingOrDestroyed() {
         final Activity activity = getActivity();
-        if (activity instanceof SettingsActivity) {
-            SettingsActivity sa = (SettingsActivity) activity;
-            sa.startPreferencePanel(fragmentClass, extras, titleRes, null, caller, requestCode);
-            return true;
-        } else {
-            Log.w(TAG,
-                    "Parent isn't SettingsActivity nor PreferenceActivity, thus there's no way to "
-                    + "launch the given Fragment (name: " + fragmentClass
-                    + ", requestCode: " + requestCode + ")");
-            return false;
-        }
-    }
-
-    public static class HighlightablePreferenceGroupAdapter extends PreferenceGroupAdapter {
-
-        private int mHighlightPosition = -1;
-
-        public HighlightablePreferenceGroupAdapter(PreferenceGroup preferenceGroup) {
-            super(preferenceGroup);
-        }
-
-        public void highlight(int position) {
-            mHighlightPosition = position;
-            notifyDataSetChanged();
-        }
-
-        @Override
-        public void onBindViewHolder(PreferenceViewHolder holder, int position) {
-            super.onBindViewHolder(holder, position);
-            if (position == mHighlightPosition) {
-                View v = holder.itemView;
-                v.post(() -> {
-                    if (v.getBackground() != null) {
-                        final int centerX = v.getWidth() / 2;
-                        final int centerY = v.getHeight() / 2;
-                        v.getBackground().setHotspot(centerX, centerY);
-                    }
-                    v.setPressed(true);
-                    v.setPressed(false);
-                    mHighlightPosition = -1;
-                });
-            }
-        }
+        return activity == null || activity.isFinishing() || activity.isDestroyed();
     }
 }

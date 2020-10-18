@@ -20,21 +20,23 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.os.Bundle;
 import android.os.LocaleList;
-import android.support.v4.view.MotionEventCompat;
-import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.helper.ItemTouchHelper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CheckBox;
 import android.widget.CompoundButton;
+
+import androidx.core.view.MotionEventCompat;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.internal.app.LocalePicker;
 import com.android.internal.app.LocaleStore;
-
 import com.android.settings.R;
+import com.android.settings.shortcut.ShortcutsUpdateTask;
 
 import java.text.NumberFormat;
 import java.util.ArrayList;
@@ -81,14 +83,13 @@ class LocaleDragAndDropAdapter
     }
 
     public LocaleDragAndDropAdapter(Context context, List<LocaleStore.LocaleInfo> feedItemList) {
-        this.mFeedItemList = feedItemList;
-
-        this.mContext = context;
+        mFeedItemList = feedItemList;
+        mContext = context;
 
         final float dragElevation = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8,
                 context.getResources().getDisplayMetrics());
 
-        this.mItemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
+        mItemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
                 ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0 /* no swipe */) {
 
             @Override
@@ -159,10 +160,13 @@ class LocaleDragAndDropAdapter
         dragCell.setShowCheckbox(mRemoveMode);
         dragCell.setShowMiniLabel(!mRemoveMode);
         dragCell.setShowHandle(!mRemoveMode && mDragEnabled);
-        dragCell.setChecked(mRemoveMode ? feedItem.getChecked() : false);
         dragCell.setTag(feedItem);
-        dragCell.getCheckbox()
-                .setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        CheckBox checkbox = dragCell.getCheckbox();
+        // clear listener before setChecked() in case another item already bind to
+        // current ViewHolder and checked event is triggered on stale listener mistakenly.
+        checkbox.setOnCheckedChangeListener(null);
+        checkbox.setChecked(mRemoveMode ? feedItem.getChecked() : false);
+        checkbox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
                     @Override
                     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                         LocaleStore.LocaleInfo feedItem =
@@ -247,13 +251,8 @@ class LocaleDragAndDropAdapter
         return result;
     }
 
-    LocaleStore.LocaleInfo getFirstChecked() {
-        for (LocaleStore.LocaleInfo li : mFeedItemList) {
-            if (li.getChecked()) {
-                return li;
-            }
-        }
-        return null;
+    boolean isFirstLocaleChecked() {
+        return mFeedItemList != null && mFeedItemList.get(0).getChecked();
     }
 
     void addLocale(LocaleStore.LocaleInfo li) {
@@ -299,6 +298,8 @@ class LocaleDragAndDropAdapter
 
                 LocalePicker.updateLocales(mLocalesToSetNext);
                 mLocalesSetLast = mLocalesToSetNext;
+                new ShortcutsUpdateTask(mContext).execute();
+
                 mLocalesToSetNext = null;
 
                 mNumberFormatter = NumberFormat.getNumberInstance(Locale.getDefault());

@@ -45,20 +45,20 @@ public abstract class AppStateBaseBridge implements ApplicationsState.Callbacks 
         // the same time as us as well.
         mHandler = new BackgroundHandler(mAppState != null ? mAppState.getBackgroundLooper()
                 : Looper.getMainLooper());
-        mMainHandler = new MainHandler();
+        mMainHandler = new MainHandler(Looper.getMainLooper());
     }
 
     public void resume() {
         mHandler.sendEmptyMessage(BackgroundHandler.MSG_LOAD_ALL);
-        mAppSession.resume();
+        mAppSession.onResume();
     }
 
     public void pause() {
-        mAppSession.pause();
+        mAppSession.onPause();
     }
 
     public void release() {
-        mAppSession.release();
+        mAppSession.onDestroy();
     }
 
     public void forceUpdate(String pkg, int uid) {
@@ -106,10 +106,15 @@ public abstract class AppStateBaseBridge implements ApplicationsState.Callbacks 
     }
 
     protected abstract void loadAllExtraInfo();
+
     protected abstract void updateExtraInfo(AppEntry app, String pkg, int uid);
 
     private class MainHandler extends Handler {
         private static final int MSG_INFO_UPDATED = 1;
+
+        public MainHandler(Looper looper) {
+            super(looper);
+        }
 
         @Override
         public void handleMessage(Message msg) {

@@ -15,25 +15,67 @@
      limitations under the License.
 -->
 
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-    android:key="zen_mode_settings"
-    android:title="@string/zen_mode_settings_title" >
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:settings="http://schemas.android.com/apk/res-auto"
+    android:title="@string/zen_mode_settings_title">
 
-    <!-- Priority only allows -->
-    <PreferenceScreen
-            android:key="priority_settings"
-            android:title="@string/zen_mode_priority_settings_title"
-            android:fragment="com.android.settings.notification.ZenModePrioritySettings" />
+    <!-- Turn on DND button -->
+    <com.android.settingslib.widget.LayoutPreference
+        android:key="zen_mode_toggle"
+        android:title="@string/zen_mode_settings_title"
+        android:selectable="false"
+        android:layout="@layout/zen_mode_settings_button"
+        settings:allowDividerBelow="true"
+        settings:keywords="@string/keywords_zen_mode_settings"/>
 
-    <!-- Automated rules -->
-    <PreferenceScreen
-            android:key="automation_settings"
-            android:title="@string/zen_mode_automation_settings_title"
-            android:fragment="com.android.settings.notification.ZenModeAutomationSettings" />
+    <PreferenceCategory
+        android:key="zen_mode_settings_category_behavior"
+        android:title="@string/zen_category_behavior">
+        <!-- People -->
+        <Preference
+            android:key="zen_mode_behavior_people"
+            android:title="@string/zen_category_people"
+            android:fragment="com.android.settings.notification.zen.ZenModePeopleSettings" />
 
-    <!-- Visual interruptions -->
-    <PreferenceScreen
-            android:key="visual_interruptions_settings"
-            android:title="@string/zen_mode_visual_interruptions_settings_title"
-            android:fragment="com.android.settings.notification.ZenModeVisualInterruptionSettings" />
+        <!-- Apps -->
+        <Preference
+            android:key="zen_mode_behavior_apps"
+            android:title="@string/zen_category_apps"
+            android:fragment="com.android.settings.notification.zen.ZenModeBypassingAppsSettings" />
+
+        <!-- All sounds -->
+        <Preference
+            android:key="zen_sound_vibration_settings"
+            android:title="@string/zen_category_exceptions"
+            android:fragment="com.android.settings.notification.zen.ZenModeSoundVibrationSettings" />
+    </PreferenceCategory>
+
+    <!-- Automatic rules -->
+    <Preference
+        android:key="zen_mode_automation_settings"
+        android:title="@string/zen_category_schedule"
+        settings:allowDividerAbove="true"
+        android:fragment="com.android.settings.notification.zen.ZenModeAutomationSettings"/>
+
+    <PreferenceCategory
+        android:key="zen_mode_settings_advanced"
+        settings:initialExpandedChildrenCount="0">
+
+        <!-- DND duration settings -->
+        <com.android.settings.notification.zen.ZenDurationDialogPreference
+            android:key="zen_mode_duration_settings"
+            android:title="@string/zen_category_duration"
+            android:widgetLayout="@null"/>
+
+        <!-- What to block (effects) -->
+        <Preference
+            android:key="zen_mode_block_effects_settings"
+            android:title="@string/zen_mode_restrict_notifications_title"
+            android:fragment="com.android.settings.notification.zen.ZenModeRestrictNotificationsSettings" />
+    </PreferenceCategory>
+
+    <!-- Footer that shows if user is put into alarms only or total silence mode by an app -->
+    <com.android.settingslib.widget.FooterPreference/>
+
 </PreferenceScreen>

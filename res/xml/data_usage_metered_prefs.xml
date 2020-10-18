@@ -14,8 +14,10 @@
      limitations under the License.
 -->
 
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-                  android:title="@string/display_settings">
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:key="data_usage_metered_prefs"
+    android:title="@string/network_restrictions">
 
     <PreferenceCategory
         android:key="mobile"
@@ -35,9 +37,9 @@
 
     </PreferenceCategory>
 
-    <Preference
-        android:summary="@string/data_usage_metered_body"
-        android:persistent="false"
+    <com.android.settingslib.widget.FooterPreference
+        android:title="@string/data_usage_metered_body"
+        android:key="footer_preference"
         android:selectable="false" />
 
 </PreferenceScreen>

@@ -16,36 +16,30 @@
 
 package com.android.settings.accessibility;
 
+import android.app.settings.SettingsEnums;
 import android.os.Bundle;
-
-import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
 
 public class ToggleScreenMagnificationPreferenceFragmentForSetupWizard
         extends ToggleScreenMagnificationPreferenceFragment {
 
-    private boolean mToggleSwitchWasInitiallyChecked;
-
     @Override
-    protected void onProcessArguments(Bundle arguments) {
-        super.onProcessArguments(arguments);
-        mToggleSwitchWasInitiallyChecked = mToggleSwitch.isChecked();
-    }
-
-    @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.SUW_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFICATION;
+    public int getMetricsCategory() {
+        return SettingsEnums.SUW_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFICATION;
     }
 
     @Override
     public void onStop() {
         // Log the final choice in value if it's different from the previous value.
-        if (mToggleSwitch.isChecked() != mToggleSwitchWasInitiallyChecked) {
-            MetricsLogger.action(getContext(),
-                    MetricsEvent.SUW_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFICATION,
-                    mToggleSwitch.isChecked());
+        Bundle args = getArguments();
+        if ((args != null) && args.containsKey(AccessibilitySettings.EXTRA_CHECKED)) {
+            if (mToggleServiceDividerSwitchPreference.isChecked() != args.getBoolean(
+                    AccessibilitySettings.EXTRA_CHECKED)) {
+                // TODO: Distinguish between magnification modes
+                mMetricsFeatureProvider.action(getContext(),
+                        SettingsEnums.SUW_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFICATION,
+                        mToggleServiceDividerSwitchPreference.isChecked());
+            }
         }
-
         super.onStop();
     }
 }

@@ -16,8 +16,9 @@
 
 package com.android.settings;
 
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
 import android.app.Activity;
-import android.app.admin.DevicePolicyManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -27,13 +28,15 @@ import android.os.Bundle;
 import android.os.PersistableBundle;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.TextView;
 
-import com.android.settingslib.RestrictedLockUtils;
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
 
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+import com.android.settings.dashboard.RestrictedDashboardFragment;
+import com.android.settings.enterprise.ActionDisabledByAdminDialogHelper;
+import com.android.settingslib.RestrictedLockUtilsInternal;
 
 /**
  * Base class for settings screens that should be pin protected when in restricted mode or
@@ -46,13 +49,16 @@ import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
  * If this settings screen should be pin protected whenever
  * {@link RestrictionsManager.hasRestrictionsProvider()} returns true, pass in
  * {@link RESTRICT_IF_OVERRIDABLE} to the constructor instead of a restrictions key.
+ *
+ * @deprecated Use {@link RestrictedDashboardFragment} instead
  */
+@Deprecated
 public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragment {
 
     protected static final String RESTRICT_IF_OVERRIDABLE = "restrict_if_overridable";
 
     // No RestrictedSettingsFragment screens should use this number in startActivityForResult.
-    private static final int REQUEST_PIN_CHALLENGE = 12309;
+    @VisibleForTesting static final int REQUEST_PIN_CHALLENGE = 12309;
 
     private static final String KEY_CHALLENGE_SUCCEEDED = "chsc";
     private static final String KEY_CHALLENGE_REQUESTED = "chrq";
@@ -65,7 +71,6 @@ public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragm
     private RestrictionsManager mRestrictionsManager;
 
     private final String mRestrictionKey;
-    private View mAdminSupportDetails;
     private EnforcedAdmin mEnforcedAdmin;
     private TextView mEmptyTextView;
 
@@ -82,6 +87,9 @@ public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragm
             }
         }
     };
+
+    @VisibleForTesting
+    AlertDialog mActionDisabledDialog;
 
     /**
      * @param restrictionKey The restriction key to check before pin protecting
@@ -114,7 +122,6 @@ public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragm
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
-        mAdminSupportDetails = initAdminSupportDetailsView();
         mEmptyTextView = initEmptyTextView();
     }
 
@@ -149,6 +156,10 @@ public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragm
             if (resultCode == Activity.RESULT_OK) {
                 mChallengeSucceeded = true;
                 mChallengeRequested = false;
+                if (mActionDisabledDialog != null && mActionDisabledDialog.isShowing()) {
+                    mActionDisabledDialog.setOnDismissListener(null);
+                    mActionDisabledDialog.dismiss();
+                }
             } else {
                 mChallengeSucceeded = false;
             }
@@ -202,20 +213,16 @@ public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragm
         return restricted && mRestrictionsManager.hasRestrictionsProvider();
     }
 
-    private View initAdminSupportDetailsView() {
-        return getActivity().findViewById(R.id.admin_support_details);
-    }
-
     protected TextView initEmptyTextView() {
         TextView emptyView = (TextView) getActivity().findViewById(android.R.id.empty);
         return emptyView;
     }
 
     public EnforcedAdmin getRestrictionEnforcedAdmin() {
-        mEnforcedAdmin = RestrictedLockUtils.checkIfRestrictionEnforced(getActivity(),
+        mEnforcedAdmin = RestrictedLockUtilsInternal.checkIfRestrictionEnforced(getActivity(),
                 mRestrictionKey, UserHandle.myUserId());
-        if (mEnforcedAdmin != null && mEnforcedAdmin.userId == UserHandle.USER_NULL) {
-            mEnforcedAdmin.userId = UserHandle.myUserId();
+        if (mEnforcedAdmin != null && mEnforcedAdmin.user == null) {
+            mEnforcedAdmin.user = UserHandle.of(UserHandle.myUserId());
         }
         return mEnforcedAdmin;
     }
@@ -227,11 +234,14 @@ public abstract class RestrictedSettingsFragment extends SettingsPreferenceFragm
     @Override
     protected void onDataSetChanged() {
         highlightPreferenceIfNeeded();
-        if (mAdminSupportDetails != null && isUiRestrictedByOnlyAdmin()) {
+        if (isUiRestrictedByOnlyAdmin()
+                && (mActionDisabledDialog == null || !mActionDisabledDialog.isShowing())) {
             final EnforcedAdmin admin = getRestrictionEnforcedAdmin();
-            ShowAdminSupportDetailsDialog.setAdminSupportDetails(getActivity(),
-                    mAdminSupportDetails, admin, false);
-            setEmptyView(mAdminSupportDetails);
+            mActionDisabledDialog = new ActionDisabledByAdminDialogHelper(getActivity())
+                    .prepareDialogBuilder(mRestrictionKey, admin)
+                    .setOnDismissListener(__ -> getActivity().finish())
+                    .show();
+            setEmptyView(new View(getContext()));
         } else if (mEmptyTextView != null) {
             setEmptyView(mEmptyTextView);
         }

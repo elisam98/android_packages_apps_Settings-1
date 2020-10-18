@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2015 The Android Open Source Project
- * Copyright (C) 2016 The CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +15,20 @@
  */
 package com.android.settings.applications;
 
-import android.app.Activity;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
-import android.content.Intent;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceClickListener;
 import android.text.format.Formatter;
 import android.text.format.Formatter.BytesResult;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceClickListener;
+
 import com.android.settings.R;
-import com.android.settings.Settings.AppOpsSummaryActivity;
 import com.android.settings.SummaryPreference;
 import com.android.settings.Utils;
 import com.android.settings.applications.ProcStatsData.MemInfo;
-import com.android.settings.dashboard.SummaryLoader;
+import com.android.settings.core.SubSettingLauncher;
 
 public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenceClickListener {
 
@@ -41,9 +39,6 @@ public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenc
     private static final String KEY_AVERAGY_USED = "average_used";
     private static final String KEY_FREE = "free";
     private static final String KEY_APP_LIST = "apps_list";
-    private static final String KEY_APP_STARTUP = "apps_startup";
-
-    private Activity mActivity;
 
     private SummaryPreference mSummaryPref;
 
@@ -52,13 +47,10 @@ public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenc
     private Preference mAverageUsed;
     private Preference mFree;
     private Preference mAppListPreference;
-    private Preference mAppStartupPreference;
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
-
-        mActivity = getActivity();
 
         addPreferencesFromResource(R.xml.process_stats_summary);
         mSummaryPref = (SummaryPreference) findPreference(KEY_STATUS_HEADER);
@@ -68,8 +60,6 @@ public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenc
         mFree = findPreference(KEY_FREE);
         mAppListPreference = findPreference(KEY_APP_LIST);
         mAppListPreference.setOnPreferenceClickListener(this);
-        mAppStartupPreference = findPreference(KEY_APP_STARTUP);
-        mAppStartupPreference.setOnPreferenceClickListener(this);
     }
 
     @Override
@@ -109,63 +99,30 @@ public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenc
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.PROCESS_STATS_SUMMARY;
+    public int getMetricsCategory() {
+        return SettingsEnums.PROCESS_STATS_SUMMARY;
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_uri_process_stats_summary;
     }
 
     @Override
     public boolean onPreferenceClick(Preference preference) {
         if (preference == mAppListPreference) {
-            Bundle args = new Bundle();
+            final Bundle args = new Bundle();
             args.putBoolean(ARG_TRANSFER_STATS, true);
             args.putInt(ARG_DURATION_INDEX, mDurationIndex);
             mStatsManager.xferStats();
-            startFragment(this, ProcessStatsUi.class.getName(), R.string.memory_usage_apps, 0,
-                    args);
-            return true;
-        } else if (preference == mAppStartupPreference) {
-            Intent intent = new Intent(Intent.ACTION_MAIN);
-            intent.putExtra("appops_tab", getString(R.string.app_ops_categories_bootup));
-            intent.setClass(mActivity, AppOpsSummaryActivity.class);
-            mActivity.startActivity(intent);
+            new SubSettingLauncher(getContext())
+                    .setDestination(ProcessStatsUi.class.getName())
+                    .setTitleRes(R.string.memory_usage_apps)
+                    .setArguments(args)
+                    .setSourceMetricsCategory(getMetricsCategory())
+                    .launch();
             return true;
         }
         return false;
     }
-
-    private static class SummaryProvider implements SummaryLoader.SummaryProvider {
-
-        private final Context mContext;
-        private final SummaryLoader mSummaryLoader;
-
-        public SummaryProvider(Context context, SummaryLoader summaryLoader) {
-            mContext = context;
-            mSummaryLoader = summaryLoader;
-        }
-
-        @Override
-        public void setListening(boolean listening) {
-            if (listening) {
-                ProcStatsData statsManager = new ProcStatsData(mContext, false);
-                statsManager.setDuration(sDurations[0]);
-                MemInfo memInfo = statsManager.getMemInfo();
-                String usedResult = Formatter.formatShortFileSize(mContext,
-                        (long) memInfo.realUsedRam);
-                String totalResult = Formatter.formatShortFileSize(mContext,
-                        (long) memInfo.realTotalRam);
-                mSummaryLoader.setSummary(this, mContext.getString(R.string.memory_summary,
-                        usedResult, totalResult));
-            }
-        }
-    }
-
-    public static final SummaryLoader.SummaryProviderFactory SUMMARY_PROVIDER_FACTORY
-            = new SummaryLoader.SummaryProviderFactory() {
-        @Override
-        public SummaryLoader.SummaryProvider createSummaryProvider(Activity activity,
-                                                                   SummaryLoader summaryLoader) {
-            return new SummaryProvider(activity, summaryLoader);
-        }
-    };
-
 }

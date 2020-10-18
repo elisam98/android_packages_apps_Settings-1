@@ -24,8 +24,7 @@ import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceViewHolder;
+import android.os.UserManager;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.style.BulletSpan;
@@ -35,13 +34,20 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
+import androidx.core.content.res.TypedArrayUtils;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceViewHolder;
+
 import com.android.settings.R;
+import com.android.settingslib.RestrictedLockUtils;
+import com.android.settingslib.RestrictedLockUtilsInternal;
 import com.android.settingslib.applications.AppUtils;
 import com.android.settingslib.applications.ApplicationsState;
 
 public class ClearDefaultsPreference extends Preference {
 
     protected static final String TAG = ClearDefaultsPreference.class.getSimpleName();
+    protected ApplicationsState.AppEntry mAppEntry;
 
     private Button mActivitiesButton;
 
@@ -49,7 +55,9 @@ public class ClearDefaultsPreference extends Preference {
     private IUsbManager mUsbManager;
     private PackageManager mPm;
     private String mPackageName;
-    protected ApplicationsState.AppEntry mAppEntry;
+
+    private final boolean mAppsControlDisallowedBySystem;
+    private final RestrictedLockUtils.EnforcedAdmin mAppsControlDisallowedAdmin;
 
     public ClearDefaultsPreference(Context context, AttributeSet attrs, int defStyleAttr,
             int defStyleRes) {
@@ -61,6 +69,13 @@ public class ClearDefaultsPreference extends Preference {
         mPm = context.getPackageManager();
         IBinder b = ServiceManager.getService(Context.USB_SERVICE);
         mUsbManager = IUsbManager.Stub.asInterface(b);
+
+        mAppsControlDisallowedBySystem = RestrictedLockUtilsInternal.hasBaseUserRestriction(
+                getContext(), UserManager.DISALLOW_APPS_CONTROL, UserHandle.myUserId());
+        mAppsControlDisallowedAdmin = RestrictedLockUtilsInternal.checkIfRestrictionEnforced(
+                getContext(), UserManager.DISALLOW_APPS_CONTROL, UserHandle.myUserId());
+
+
     }
 
     public ClearDefaultsPreference(Context context, AttributeSet attrs, int defStyleAttr) {
@@ -68,7 +83,9 @@ public class ClearDefaultsPreference extends Preference {
     }
 
     public ClearDefaultsPreference(Context context, AttributeSet attrs) {
-        this(context, attrs, 0);
+        this(context, attrs, TypedArrayUtils.getAttr(context,
+                androidx.preference.R.attr.preferenceStyle,
+                android.R.attr.preferenceStyle));
     }
 
     public ClearDefaultsPreference(Context context) {
@@ -91,6 +108,12 @@ public class ClearDefaultsPreference extends Preference {
         mActivitiesButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (mAppsControlDisallowedAdmin != null && !mAppsControlDisallowedBySystem) {
+                    RestrictedLockUtils.sendShowAdminSupportDetailsIntent(
+                            getContext(), mAppsControlDisallowedAdmin);
+                    return;
+                }
+
                 if (mUsbManager != null) {
                     final int userId = UserHandle.myUserId();
                     mPm.clearPackagePreferredActivities(mPackageName);

@@ -17,20 +17,23 @@
 package com.android.settings;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.view.Gravity;
-import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
-import com.android.settings.deviceinfo.Status;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
+
+import java.util.Locale;
 
 /**
  * {@link Activity} that displays regulatory information for the "Regulatory information"
@@ -44,7 +47,12 @@ import com.android.settings.deviceinfo.Status;
  */
 public class RegulatoryInfoDisplayActivity extends Activity implements
         DialogInterface.OnDismissListener {
+
     private final String REGULATORY_INFO_RESOURCE = "regulatory_info";
+    private static final String DEFAULT_REGULATORY_INFO_FILEPATH =
+            "/data/misc/elabel/regulatory_info.png";
+    private static final String REGULATORY_INFO_FILEPATH_TEMPLATE =
+            "/data/misc/elabel/regulatory_info_%s.png";
 
     /**
      * Display the regulatory info graphic in a dialog window.
@@ -52,20 +60,23 @@ public class RegulatoryInfoDisplayActivity extends Activity implements
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Resources resources = getResources();
-
-        if (!resources.getBoolean(R.bool.config_show_regulatory_info)) {
-            finish();   // no regulatory info to display for this device
-        }
-
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle(R.string.regulatory_information_dialog_title)
+                .setTitle(R.string.regulatory_labels)
                 .setOnDismissListener(this);
 
-        View view = getLayoutInflater().inflate(R.layout.regulatory_info, null);
-
         boolean regulatoryInfoDrawableExists = false;
-        int resId = getResourceId();
+
+        final String regulatoryInfoFile = getRegulatoryInfoImageFileName();
+        final Bitmap regulatoryInfoBitmap = BitmapFactory.decodeFile(regulatoryInfoFile);
+
+        if (regulatoryInfoBitmap != null) {
+            regulatoryInfoDrawableExists = true;
+        }
+
+        int resId = 0;
+        if (!regulatoryInfoDrawableExists) {
+            resId = getResourceId();
+        }
         if (resId != 0) {
             try {
                 Drawable d = getDrawable(resId);
@@ -78,42 +89,55 @@ public class RegulatoryInfoDisplayActivity extends Activity implements
             }
         }
 
+        CharSequence regulatoryText = getResources()
+                .getText(R.string.regulatory_info_text);
+
         if (regulatoryInfoDrawableExists) {
-            ImageView image = (ImageView) view.findViewById(R.id.regulatoryInfo);
-            image.setVisibility(View.VISIBLE);
-            image.setImageResource(resId);
+            View view = getLayoutInflater().inflate(R.layout.regulatory_info, null);
+            ImageView image = view.findViewById(R.id.regulatoryInfo);
+            if (regulatoryInfoBitmap != null) {
+                image.setImageBitmap(regulatoryInfoBitmap);
+            } else {
+                image.setImageResource(resId);
+            }
+            builder.setView(view);
+            builder.show();
+        } else if (regulatoryText.length() > 0) {
+            builder.setMessage(regulatoryText);
+            AlertDialog dialog = builder.show();
+            // we have to show the dialog first, or the setGravity() call will throw a NPE
+            TextView messageText = (TextView) dialog.findViewById(android.R.id.message);
+            messageText.setGravity(Gravity.CENTER);
+        } else {
+            // neither drawable nor text resource exists, finish activity
+            finish();
         }
-
-        String sarValues = Status.getSarValues(getResources());
-        TextView sarText = (TextView) view.findViewById(R.id.sarValues);
-        if (!TextUtils.isEmpty(sarValues)) {
-            sarText.setVisibility(resources.getBoolean(R.bool.config_show_sar_enable)
-                    ? View.VISIBLE : View.GONE);
-            sarText.setText(sarValues);
-        }
-
-        String icCodes = Status.getIcCodes(getResources());
-        TextView icCode = (TextView) view.findViewById(R.id.icCodes);
-        if (!TextUtils.isEmpty(icCodes)) {
-            icCode.setVisibility(resources.getBoolean(R.bool.config_show_ic_enable)
-                    ? View.VISIBLE : View.GONE);
-            icCode.setText(icCodes);
-        }
-        builder.setView(view);
-        builder.show();
     }
 
-    private int getResourceId() {
+    @VisibleForTesting
+    int getResourceId() {
         // Use regulatory_info by default.
         int resId = getResources().getIdentifier(
                 REGULATORY_INFO_RESOURCE, "drawable", getPackageName());
 
         // When hardware sku property exists, use regulatory_info_<sku> resource if valid.
-        String sku = SystemProperties.get("ro.boot.hardware.sku", "");
+        final String sku = getSku();
         if (!TextUtils.isEmpty(sku)) {
             String regulatory_info_res = REGULATORY_INFO_RESOURCE + "_" + sku.toLowerCase();
             int id = getResources().getIdentifier(
                     regulatory_info_res, "drawable", getPackageName());
+            if (id != 0) {
+                resId = id;
+            }
+        }
+
+        // When hardware coo property exists, use regulatory_info_<sku>_<coo> resource if valid.
+        final String coo = getCoo();
+        if (!TextUtils.isEmpty(coo) && !TextUtils.isEmpty(sku)) {
+            final String regulatory_info_coo_res =
+                    REGULATORY_INFO_RESOURCE + "_" + sku.toLowerCase() + "_" + coo.toLowerCase();
+            final int id = getResources().getIdentifier(
+                    regulatory_info_coo_res, "drawable", getPackageName());
             if (id != 0) {
                 resId = id;
             }
@@ -124,5 +148,23 @@ public class RegulatoryInfoDisplayActivity extends Activity implements
     @Override
     public void onDismiss(DialogInterface dialog) {
         finish();   // close the activity
+    }
+
+    private String getCoo() {
+        return SystemProperties.get("ro.boot.hardware.coo", "");
+    }
+
+    private String getSku() {
+        return SystemProperties.get("ro.boot.hardware.sku", "");
+    }
+
+    private String getRegulatoryInfoImageFileName() {
+        final String sku = getSku();
+        if (TextUtils.isEmpty(sku)) {
+            return DEFAULT_REGULATORY_INFO_FILEPATH;
+        } else {
+            return String.format(Locale.US, REGULATORY_INFO_FILEPATH_TEMPLATE,
+                    sku.toLowerCase());
+        }
     }
 }

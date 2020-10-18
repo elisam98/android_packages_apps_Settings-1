@@ -15,14 +15,14 @@
     limitations under the License.
 -->
 
-<com.android.setupwizardlib.GlifLayout
+<com.google.android.setupdesign.GlifLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:settings="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:icon="@drawable/ic_lock"
-    android:layout="@layout/suw_glif_blank_template"
-    settings:suwHeaderText="@string/lock_settings_picker_title">
+    android:layout="@layout/sud_glif_blank_template"
+    settings:sucHeaderText="@string/lock_settings_picker_title">
 
     <com.android.internal.widget.LinearLayoutWithDefaultTouchRecepient
         android:id="@+id/topLayout"
@@ -37,96 +37,88 @@
             android:layout_width="0dip"
             android:layout_height="match_parent"
             android:layout_weight="1.0"
-            android:layout_marginStart="?attr/suwMarginSides"
-            android:layout_marginBottom="@dimen/suw_content_frame_padding_bottom"
+            android:layout_marginStart="?attr/sudMarginSides"
+            android:layout_marginBottom="@dimen/sud_content_frame_padding_bottom"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             android:orientation="vertical">
 
-            <LinearLayout
+            <ScrollView
+                android:id="@+id/scroll_layout_title_header"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:layout_height="0dp"
+                android:layout_weight="1">
 
-                <ImageView
-                    android:id="@+id/suw_layout_icon"
-                    style="@style/SuwGlifIcon"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="0dp"
-                    android:layout_marginEnd="0dp"
-                    android:src="@drawable/ic_lock" />
-
-                <TextView
-                    android:id="@+id/suw_layout_title"
-                    style="@style/SuwGlifHeaderTitle"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="0dp"
-                    android:layout_marginEnd="0dp" />
+                    android:orientation="vertical">
 
-            </LinearLayout>
-
-            <!-- header message -->
-            <TextView android:id="@+id/headerText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:gravity="start|bottom"
-                android:textSize="18sp" />
-
-            <!-- footer can show a message, or confirm / restart buttons -->
-            <RelativeLayout
-                android:layout_width="match_parent"
-                android:layout_height="0dip"
-                android:layout_weight="1.0">
-
-                <!-- confirm / restart buttons -->
-                <LinearLayout android:id="@+id/buttonContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_centerHorizontal="true"
-                    android:layout_alignParentBottom="true"
-                    android:orientation="horizontal">
-
-                    <!-- left / top button: skip, or re-try -->
-                    <Button android:id="@+id/footerLeftButton"
-                        style="@style/SetupWizardButton.Negative"
+                    <ImageView
+                        android:id="@+id/sud_layout_icon"
+                        style="@style/SudGlifIcon"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/lockpattern_restart_button_text" />
+                        android:layout_gravity="?attr/sudGlifHeaderGravity"
+                        android:layout_marginStart="0dp"
+                        android:layout_marginEnd="0dp"
+                        android:src="@drawable/ic_lock"/>
 
-                    <Space
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:layout_weight="1" />
-
-                    <!-- right / bottom button: confirm or ok -->
-                    <Button android:id="@+id/footerRightButton"
-                        style="@style/SetupWizardButton.Positive"
-                        android:layout_width="wrap_content"
+                    <TextView
+                        android:id="@+id/suc_layout_title"
+                        style="@style/SudGlifHeaderTitle"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/lockpattern_confirm_button_text" />
+                        android:layout_marginStart="0dp"
+                        android:layout_marginEnd="0dp"/>
+
+                    <TextView
+                        android:id="@+id/sud_layout_description"
+                        style="@style/SudDescription.Glif"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minLines="2" />
+
+                    <!-- header message -->
+                    <TextView
+                        android:id="@+id/headerText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:gravity="?attr/sudGlifHeaderGravity"
+                        android:textSize="18sp"/>
+
+                    <TextView android:id="@+id/footerText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_centerHorizontal="true"
+                        android:layout_marginTop="10dp"
+                        android:textSize="14sp"
+                        android:visibility="gone" />
+
+                    <Button
+                        android:id="@+id/screen_lock_options"
+                        style="@style/SudGlifButton.Tertiary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:gravity="?attr/sudGlifHeaderGravity"
+                        android:text="@string/setup_lock_settings_options_button_label"
+                        android:visibility="gone" />
 
                 </LinearLayout>
 
-                <!-- message above buttons -->
-                <TextView android:id="@+id/footerText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_above="@+id/buttonContainer"
-                    android:layout_centerHorizontal="true"
-                    android:layout_marginBottom="4dip"
-                    android:textSize="14sp"
-                    android:visibility="gone" />
-
-            </RelativeLayout>
+            </ScrollView>
 
         </LinearLayout>
 
         <!-- right side: lock pattern -->
-        <FrameLayout
+        <com.google.android.setupdesign.view.FillContentLayout
+            style="@style/LockPatternContainerStyle"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1.0">
+            android:layout_weight="1.0"
+            android:paddingStart="0dp">
 
             <com.android.internal.widget.LockPatternView android:id="@+id/lockPattern"
                 android:layout_width="match_parent"
@@ -134,8 +126,8 @@
                 android:layout_gravity="center"
                 android:background="@color/lock_pattern_background" />
 
-        </FrameLayout>
+        </com.google.android.setupdesign.view.FillContentLayout>
 
     </com.android.internal.widget.LinearLayoutWithDefaultTouchRecepient>
 
-</com.android.setupwizardlib.GlifLayout>
+</com.google.android.setupdesign.GlifLayout>

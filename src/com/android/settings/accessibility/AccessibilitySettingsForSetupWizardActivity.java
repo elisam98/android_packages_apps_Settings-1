@@ -16,38 +16,35 @@
 
 package com.android.settings.accessibility;
 
-import android.app.Fragment;
-import android.app.FragmentTransaction;
+import android.content.ComponentName;
 import android.os.Bundle;
-import android.text.TextUtils;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.LayoutInflater;
+import android.util.Log;
 import android.view.Menu;
-import android.view.View;
-import android.view.WindowInsets;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
+import android.view.accessibility.AccessibilityEvent;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceFragmentCompat;
 
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
-import com.android.settings.SettingsPreferenceFragment;
-import com.android.setupwizardlib.util.SystemBarHelper;
-import com.android.setupwizardlib.view.NavigationBar;
+import com.android.settings.SetupWizardUtils;
+import com.android.settings.core.SubSettingLauncher;
+import com.android.settings.display.FontSizePreferenceFragmentForSetupWizard;
+import com.android.settings.search.actionbar.SearchMenuController;
+import com.android.settings.support.actionbar.HelpResourceProvider;
+import com.android.settingslib.core.instrumentation.Instrumentable;
+
+import com.google.android.setupcompat.util.WizardManagerHelper;
 
 public class AccessibilitySettingsForSetupWizardActivity extends SettingsActivity {
 
+    private static final String LOG_TAG = "A11ySettingsForSUW";
     private static final String SAVE_KEY_TITLE = "activity_title";
 
-    private boolean mSendExtraWindowStateChanged;
-
-    @Override
-    protected void onCreate(Bundle savedState) {
-        super.onCreate(savedState);
-
-        // Finish configuring the content view.
-        getActionBar().setDisplayHomeAsUpEnabled(true);
-        setIsDrawerPresent(false);
-    }
+    @VisibleForTesting
+    static final String CLASS_NAME_FONT_SIZE_SETTINGS_FOR_SUW =
+            "com.android.settings.FontSizeSettingsForSetupWizardActivity";
 
     @Override
     protected void onSaveInstanceState(Bundle savedState) {
@@ -59,12 +56,6 @@ public class AccessibilitySettingsForSetupWizardActivity extends SettingsActivit
     protected void onRestoreInstanceState(Bundle savedState) {
         super.onRestoreInstanceState(savedState);
         setTitle(savedState.getCharSequence(SAVE_KEY_TITLE));
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        mSendExtraWindowStateChanged = false;
     }
 
     @Override
@@ -85,27 +76,50 @@ public class AccessibilitySettingsForSetupWizardActivity extends SettingsActivit
     }
 
     @Override
-    public void startPreferencePanel(String fragmentClass, Bundle args, int titleRes,
-            CharSequence titleText, Fragment resultTo, int resultRequestCode) {
-        // Set the title.
-        if (!TextUtils.isEmpty(titleText)) {
-            setTitle(titleText);
-        } else if (titleRes > 0) {
-            setTitle(getString(titleRes));
+    public boolean onPreferenceStartFragment(PreferenceFragmentCompat caller, Preference pref) {
+        Bundle args = pref.getExtras();
+        if (args == null) {
+            args = new Bundle();
         }
-
-        // Start the new Fragment.
-        args.putInt(SettingsPreferenceFragment.HELP_URI_RESOURCE_KEY, 0);
-        startPreferenceFragment(Fragment.instantiate(this, fragmentClass, args), true);
-        mSendExtraWindowStateChanged = true;
+        args.putInt(HelpResourceProvider.HELP_URI_RESOURCE_KEY, 0);
+        args.putBoolean(SearchMenuController.NEED_SEARCH_ICON_IN_ACTION_BAR, false);
+        new SubSettingLauncher(this)
+                .setDestination(pref.getFragment())
+                .setArguments(args)
+                .setSourceMetricsCategory(caller instanceof Instrumentable
+                        ? ((Instrumentable) caller).getMetricsCategory()
+                        : Instrumentable.METRICS_CATEGORY_UNKNOWN)
+                .launch();
+        return true;
     }
 
     @Override
-    public void onAttachFragment(Fragment fragment) {
-        if (mSendExtraWindowStateChanged) {
-            // Clear accessibility focus and let the screen reader announce the new title.
-            getWindow().getDecorView()
-                    .sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED);
+    protected void onCreate(Bundle savedState) {
+        super.onCreate(savedState);
+
+        tryLaunchFontSizeSettings();
+        findViewById(R.id.content_parent).setFitsSystemWindows(false);
+    }
+
+    @VisibleForTesting
+    void tryLaunchFontSizeSettings() {
+        if (WizardManagerHelper.isAnySetupWizard(getIntent())
+                && new ComponentName(getPackageName(),
+                CLASS_NAME_FONT_SIZE_SETTINGS_FOR_SUW).equals(
+                getIntent().getComponent())) {
+            final Bundle args = new Bundle();
+            args.putInt(HelpResourceProvider.HELP_URI_RESOURCE_KEY, 0);
+            args.putBoolean(SearchMenuController.NEED_SEARCH_ICON_IN_ACTION_BAR, false);
+            final SubSettingLauncher subSettingLauncher = new SubSettingLauncher(this)
+                    .setDestination(FontSizePreferenceFragmentForSetupWizard.class.getName())
+                    .setArguments(args)
+                    .setSourceMetricsCategory(Instrumentable.METRICS_CATEGORY_UNKNOWN)
+                    .setExtras(SetupWizardUtils.copyLifecycleExtra(getIntent().getExtras(),
+                            new Bundle()));
+
+            Log.d(LOG_TAG, "Launch font size settings");
+            subSettingLauncher.launch();
+            finish();
         }
     }
 }

@@ -16,19 +16,20 @@
 
 package com.android.settings.applications;
 
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceGroup;
 import android.util.Log;
 import android.util.TimeUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 
+import androidx.preference.Preference;
+import androidx.preference.PreferenceGroup;
+
 import com.android.internal.app.procstats.ProcessStats;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
 import com.android.settings.applications.ProcStatsData.MemInfo;
@@ -91,8 +92,13 @@ public class ProcessStatsUi extends ProcessStatsBase {
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.APPLICATIONS_PROCESS_STATS_UI;
+    public int getMetricsCategory() {
+        return SettingsEnums.APPLICATIONS_PROCESS_STATS_UI;
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_uri_process_stats_apps;
     }
 
     @Override

@@ -17,9 +17,8 @@
 package com.android.settings.deviceinfo;
 
 import android.app.ActivityManager;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
-import android.content.Intent;
-import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.UserManager;
@@ -29,16 +28,15 @@ import android.os.storage.StorageManager;
 import android.os.storage.VolumeInfo;
 import android.os.storage.VolumeRecord;
 import android.provider.DocumentsContract;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
 import android.text.TextUtils;
 import android.text.format.Formatter;
-import android.text.format.Formatter.BytesResult;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+
 import com.android.internal.util.Preconditions;
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
@@ -76,8 +74,8 @@ public class PublicVolumeSettings extends SettingsPreferenceFragment {
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.DEVICEINFO_STORAGE;
+    public int getMetricsCategory() {
+        return SettingsEnums.DEVICEINFO_STORAGE;
     }
 
     @Override
@@ -98,7 +96,9 @@ public class PublicVolumeSettings extends SettingsPreferenceFragment {
             mVolume = mStorageManager.findVolumeByUuid(fsUuid);
         } else {
             final String volId = getArguments().getString(VolumeInfo.EXTRA_VOLUME_ID);
-            mVolume = mStorageManager.findVolumeById(volId);
+            if (volId != null) {
+                mVolume = mStorageManager.findVolumeById(volId);
+            }
         }
 
         if (!isVolumeValid()) {
@@ -130,27 +130,13 @@ public class PublicVolumeSettings extends SettingsPreferenceFragment {
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
 
+        // If the volume isn't valid, we are not scaffolded to set up a view.
         if (!isVolumeValid()) {
             return;
         }
 
-        final Resources resources = getResources();
-        final int padding = resources.getDimensionPixelSize(
-                R.dimen.unmount_button_padding);
-        final ViewGroup buttonBar = getButtonBar();
-        buttonBar.removeAllViews();
-        buttonBar.setPadding(padding, padding, padding, padding);
-
-        //Fixed monkey test issue
-        //Settings crash caused by null pointer parameter
-        //Add check with mUnmount's values
-        if (null == mUnmount) {
-            mUnmount = new Button(getActivity());
-            mUnmount.setText(R.string.storage_menu_unmount);
-            mUnmount.setOnClickListener(mUnmountListener);
-        }
-
-        buttonBar.addView(mUnmount, new ViewGroup.LayoutParams(
+        final ViewGroup container = getActivity().findViewById(R.id.container_material);
+        container.addView(mUnmount, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
     }
@@ -176,19 +162,20 @@ public class PublicVolumeSettings extends SettingsPreferenceFragment {
             final long freeBytes = file.getFreeSpace();
             final long usedBytes = totalBytes - freeBytes;
 
-            final BytesResult result = Formatter.formatBytes(getResources(), usedBytes, 0);
+            final Formatter.BytesResult result = Formatter.formatBytes(getResources(), usedBytes,
+                    0);
             mSummary.setTitle(TextUtils.expandTemplate(getText(R.string.storage_size_large),
                     result.value, result.units));
             mSummary.setSummary(getString(R.string.storage_volume_used,
                     Formatter.formatFileSize(context, totalBytes)));
-            mSummary.setPercent((int) ((usedBytes * 100) / totalBytes));
+            mSummary.setPercent(usedBytes, totalBytes);
         }
 
         if (mVolume.getState() == VolumeInfo.STATE_UNMOUNTED) {
             addPreference(mMount);
         }
-        if (!mDisk.isNonRemovable() && mVolume.isMountedReadable()) {
-            getButtonBar().setVisibility(View.VISIBLE);
+        if (!mVolume.isMountedReadable()) {
+            mUnmount.setVisibility(View.GONE);
         }
         addPreference(mFormatPublic);
         if (mDisk.isAdoptable() && mIsPermittedToAdopt) {
@@ -230,19 +217,12 @@ public class PublicVolumeSettings extends SettingsPreferenceFragment {
 
     @Override
     public boolean onPreferenceTreeClick(Preference pref) {
-        final Context context = getActivity();
         if (pref == mMount) {
-            new MountTask(context, mVolume).execute();
+            new MountTask(getActivity(), mVolume).execute();
         } else if (pref == mFormatPublic) {
-            final Intent intent = new Intent(context, StorageWizardFormatConfirm.class);
-            intent.putExtra(DiskInfo.EXTRA_DISK_ID, mDisk.getId());
-            intent.putExtra(StorageWizardFormatConfirm.EXTRA_FORMAT_PRIVATE, false);
-            startActivity(intent);
+            StorageWizardFormatConfirm.showPublic(getActivity(), mDisk.getId());
         } else if (pref == mFormatPrivate) {
-            final Intent intent = new Intent(context, StorageWizardFormatConfirm.class);
-            intent.putExtra(DiskInfo.EXTRA_DISK_ID, mDisk.getId());
-            intent.putExtra(StorageWizardFormatConfirm.EXTRA_FORMAT_PRIVATE, true);
-            startActivity(intent);
+            StorageWizardFormatConfirm.showPrivate(getActivity(), mDisk.getId());
         }
 
         return super.onPreferenceTreeClick(pref);

@@ -15,7 +15,8 @@
 -->
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-    android:title="@string/legal_information">
+                  xmlns:settings="http://schemas.android.com/apk/res-auto"
+                  android:title="@string/legal_information">
 
     <!-- Note: The titles given here probably won't be used.  Instead, we programmatically
        fill the title with the label of the activity with the corresponding action.
@@ -23,37 +24,42 @@
        list. -->
 
     <!-- Copyright information -->
-    <PreferenceScreen
+    <Preference
         android:key="copyright"
-        android:title="@string/copyright_title">
-        <intent android:action="android.settings.COPYRIGHT" />
-    </PreferenceScreen>
+        android:title="@string/copyright_title"
+        settings:controller="com.android.settings.deviceinfo.legal.CopyrightPreferenceController" />
 
     <!-- License information -->
-    <PreferenceScreen
+    <Preference
         android:key="license"
-        android:title="@string/license_title">
-        <intent android:action="android.settings.LICENSE" />
-    </PreferenceScreen>
-
-    <!-- CM License information -->
-    <PreferenceScreen
-        android:key="cmlicense"
-        android:title="@string/cmlicense_title" />
+        android:title="@string/license_title"
+        settings:controller="com.android.settings.deviceinfo.legal.LicensePreferenceController" />
 
     <!-- Terms and conditions -->
-    <PreferenceScreen
+    <Preference
         android:key="terms"
-        android:title="@string/terms_title">
-        <intent android:action="android.settings.TERMS" />
-    </PreferenceScreen>
+        android:title="@string/terms_title"
+        settings:controller="com.android.settings.deviceinfo.legal.TermsPreferenceController" />
+
+    <!-- Mainline Module License information -->
+    <Preference
+        android:key="module_license"
+        android:title="@string/module_license_title"
+        android:fragment="com.android.settings.deviceinfo.legal.ModuleLicensesDashboard"
+        settings:controller="com.android.settings.deviceinfo.legal.ModuleLicensesListPreferenceController" />
 
     <!-- System WebView License information -->
-    <PreferenceScreen
+    <Preference
         android:key="webview_license"
-        android:title="@string/webview_license_title">
-        <intent android:action="android.settings.WEBVIEW_LICENSE" />
-    </PreferenceScreen>
+        android:title="@string/webview_license_title"
+        settings:controller="com.android.settings.deviceinfo.legal.WebViewLicensePreferenceController" />
+
+    <Preference
+        android:key="wallpaper_attributions"
+        android:title="@string/wallpaper_attributions"
+        android:summary="@string/wallpaper_attributions_values"
+        android:selectable="false"
+        settings:controller="com.android.settings.deviceinfo.legal.WallpaperAttributionsPreferenceController" />
 
 </PreferenceScreen>
 

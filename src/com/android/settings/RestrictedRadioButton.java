@@ -16,17 +16,16 @@
 
 package com.android.settings;
 
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
 import android.content.Context;
-import android.graphics.PorterDuff;
 import android.util.AttributeSet;
 import android.widget.RadioButton;
 import android.widget.TextView;
 
-import java.util.List;
-
 import com.android.settingslib.RestrictedLockUtils;
-
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+import com.android.settingslib.RestrictedLockUtilsInternal;
+import com.android.settingslib.utils.ColorUtil;
 
 public class RestrictedRadioButton extends RadioButton {
     private Context mContext;
@@ -65,13 +64,13 @@ public class RestrictedRadioButton extends RadioButton {
         mEnforcedAdmin = admin;
         if (mDisabledByAdmin != disabled) {
             mDisabledByAdmin = disabled;
-            RestrictedLockUtils.setTextViewAsDisabledByAdmin(mContext,
+            RestrictedLockUtilsInternal.setTextViewAsDisabledByAdmin(mContext,
                     (TextView) this, mDisabledByAdmin);
             if (mDisabledByAdmin) {
-                getButtonDrawable().setColorFilter(mContext.getColor(R.color.disabled_text_color),
-                        PorterDuff.Mode.MULTIPLY);
+                getButtonDrawable().setAlpha(
+                        (int) (255 * ColorUtil.getDisabledAlpha(mContext)));
             } else {
-                getButtonDrawable().clearColorFilter();
+                getButtonDrawable().setAlpha(0);
             }
         }
     }

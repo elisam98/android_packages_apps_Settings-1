@@ -22,11 +22,13 @@ import android.content.res.TypedArray;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
+import android.os.UserHandle;
 import android.provider.Settings.System;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceManager;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+
+import androidx.preference.Preference;
+import androidx.preference.PreferenceManager;
 
 /**
  * A {@link Preference} that allows the user to choose a ringtone from those on the device.
@@ -43,7 +45,7 @@ import android.util.AttributeSet;
  * @attr ref android.R.styleable#RingtonePreference_showSilent
  *
  * Based of frameworks/base/core/java/android/preference/RingtonePreference.java
- * but extends android.support.v7.preference.Preference instead.
+ * but extends androidx.preference.Preference instead.
  */
 public class RingtonePreference extends Preference {
 
@@ -54,6 +56,8 @@ public class RingtonePreference extends Preference {
     private boolean mShowSilent;
 
     private int mRequestCode;
+    protected int mUserId;
+    protected Context mUserContext;
 
     public RingtonePreference(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -67,7 +71,17 @@ public class RingtonePreference extends Preference {
         mShowSilent = a.getBoolean(com.android.internal.R.styleable.RingtonePreference_showSilent,
                 true);
         setIntent(new Intent(RingtoneManager.ACTION_RINGTONE_PICKER));
+        setUserId(UserHandle.myUserId());
         a.recycle();
+    }
+
+    public void setUserId(int userId) {
+        mUserId = userId;
+        mUserContext = Utils.createPackageContextAsUser(getContext(), mUserId);
+    }
+
+    public int getUserId() {
+        return mUserId;
     }
 
     /**

@@ -16,23 +16,21 @@
 
 package com.android.settings.display;
 
-import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import android.app.settings.SettingsEnums;
 
-public class ScreenZoomPreferenceFragmentForSetupWizard
-        extends ScreenZoomSettings {
+public class ScreenZoomPreferenceFragmentForSetupWizard extends ScreenZoomSettings {
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.SUW_ACCESSIBILITY_DISPLAY_SIZE;
+    public int getMetricsCategory() {
+        return SettingsEnums.SUW_ACCESSIBILITY_DISPLAY_SIZE;
     }
 
     @Override
     public void onStop() {
         // Log the final choice in value if it's different from the previous value.
         if (mCurrentIndex != mInitialIndex) {
-            MetricsLogger.action(getContext(), MetricsEvent.SUW_ACCESSIBILITY_DISPLAY_SIZE,
-                    mCurrentIndex);
+            mMetricsFeatureProvider.action(
+                    getContext(), SettingsEnums.SUW_ACCESSIBILITY_DISPLAY_SIZE, mCurrentIndex);
         }
 
         super.onStop();

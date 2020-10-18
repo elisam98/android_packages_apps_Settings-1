@@ -15,8 +15,7 @@
 -->
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:settings="http://schemas.android.com/apk/res/com.android.settings"
-        android:title="@string/vpn_title">
+        xmlns:settings="http://schemas.android.com/apk/res-auto">
 
         <Preference
                 android:key="version"
@@ -27,12 +26,24 @@
                 android:key="always_on_vpn"
                 android:title="@string/vpn_menu_lockdown"
                 android:defaultValue="false"
-                settings:userRestriction="no_config_vpn"/>
+                android:summary="@string/vpn_always_on_summary"
+                settings:userRestriction="no_config_vpn"
+                settings:useAdditionalSummary="true"
+                settings:restrictedSwitchSummary="@string/disabled_by_admin_summary_text" />
 
-        <com.android.settings.DimmableIconPreference
+        <com.android.settingslib.RestrictedSwitchPreference
+                android:key="lockdown_vpn"
+                android:title="@string/vpn_require_connection"
+                android:defaultValue="false"
+                android:dependency="always_on_vpn"
+                settings:userRestriction="no_config_vpn"
+                settings:useAdditionalSummary="true"
+                settings:restrictedSwitchSummary="@string/disabled_by_admin_summary_text" />
+
+        <com.android.settingslib.RestrictedPreference
                 android:key="forget_vpn"
                 android:title="@string/vpn_forget_long"
-                android:icon="@drawable/ic_menu_delete"
+                android:icon="@drawable/ic_delete"
                 settings:userRestriction="no_config_vpn"
                 settings:useAdminDisabledSummary="true" />
 </PreferenceScreen>

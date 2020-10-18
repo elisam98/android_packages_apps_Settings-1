@@ -16,101 +16,102 @@
 
 package com.android.settings.accessibility;
 
+import static com.android.settingslib.TwoTargetPreference.ICON_SIZE_MEDIUM;
+
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.accessibilityservice.AccessibilityShortcutInfo;
 import android.app.admin.DevicePolicyManager;
+import android.app.settings.SettingsEnums;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
-import android.content.res.Resources;
+import android.graphics.drawable.Drawable;
+import android.hardware.display.ColorDisplayManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.RemoteException;
 import android.os.UserHandle;
-import android.provider.SearchIndexableResource;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.ListPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceCategory;
-import android.support.v7.preference.PreferenceScreen;
 import android.text.TextUtils;
-import android.view.KeyCharacterMap;
-import android.view.KeyEvent;
+import android.util.ArrayMap;
 import android.view.accessibility.AccessibilityManager;
 
+import androidx.annotation.VisibleForTesting;
+import androidx.core.content.ContextCompat;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
+import androidx.preference.SwitchPreference;
+
+import com.android.internal.accessibility.AccessibilityShortcutController;
 import com.android.internal.content.PackageMonitor;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.internal.view.RotationPolicy;
-import com.android.internal.view.RotationPolicy.RotationPolicyListener;
-import com.android.settings.DialogCreatable;
 import com.android.settings.R;
-import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.Utils;
+import com.android.settings.accessibility.AccessibilityUtil.AccessibilityServiceFragmentType;
+import com.android.settings.dashboard.DashboardFragment;
+import com.android.settings.display.DarkUIPreferenceController;
 import com.android.settings.search.BaseSearchIndexProvider;
-import com.android.settings.search.Indexable;
-import com.android.settings.search.SearchIndexableRaw;
-import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+import com.android.settingslib.RestrictedLockUtilsInternal;
 import com.android.settingslib.RestrictedPreference;
 import com.android.settingslib.accessibility.AccessibilityUtils;
+import com.android.settingslib.search.SearchIndexable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Activity with the accessibility settings.
- */
-public class AccessibilitySettings extends SettingsPreferenceFragment implements DialogCreatable,
-        Preference.OnPreferenceChangeListener, Indexable {
+/** Activity with the accessibility settings. */
+@SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
+public class AccessibilitySettings extends DashboardFragment {
+
+    private static final String TAG = "AccessibilitySettings";
+
+    // Index of the first preference in a preference category.
+    private static final int FIRST_PREFERENCE_IN_CATEGORY_INDEX = -1;
 
     // Preference categories
-    private static final String SERVICES_CATEGORY = "services_category";
-    private static final String SYSTEM_CATEGORY = "system_category";
+    private static final String CATEGORY_SCREEN_READER = "screen_reader_category";
+    private static final String CATEGORY_AUDIO_AND_CAPTIONS = "audio_and_captions_category";
+    private static final String CATEGORY_DISPLAY = "display_category";
+    private static final String CATEGORY_INTERACTION_CONTROL = "interaction_control_category";
+    private static final String CATEGORY_EXPERIMENTAL = "experimental_category";
+    private static final String CATEGORY_DOWNLOADED_SERVICES = "user_installed_services_category";
+
+    private static final String[] CATEGORIES = new String[] {
+            CATEGORY_SCREEN_READER, CATEGORY_AUDIO_AND_CAPTIONS, CATEGORY_DISPLAY,
+            CATEGORY_INTERACTION_CONTROL, CATEGORY_EXPERIMENTAL, CATEGORY_DOWNLOADED_SERVICES
+    };
 
     // Preferences
-    private static final String TOGGLE_HIGH_TEXT_CONTRAST_PREFERENCE =
-            "toggle_high_text_contrast_preference";
     private static final String TOGGLE_INVERSION_PREFERENCE =
             "toggle_inversion_preference";
-    private static final String TOGGLE_POWER_BUTTON_ENDS_CALL_PREFERENCE =
-            "toggle_power_button_ends_call_preference";
-    private static final String TOGGLE_LOCK_SCREEN_ROTATION_PREFERENCE =
-            "toggle_lock_screen_rotation_preference";
-    private static final String TOGGLE_SPEAK_PASSWORD_PREFERENCE =
-            "toggle_speak_password_preference";
     private static final String TOGGLE_LARGE_POINTER_ICON =
             "toggle_large_pointer_icon";
-    private static final String TOGGLE_MASTER_MONO =
-            "toggle_master_mono";
-    private static final String SELECT_LONG_PRESS_TIMEOUT_PREFERENCE =
-            "select_long_press_timeout_preference";
-    private static final String ENABLE_ACCESSIBILITY_GESTURE_PREFERENCE_SCREEN =
-            "enable_global_gesture_preference_screen";
-    private static final String CAPTIONING_PREFERENCE_SCREEN =
-            "captioning_preference_screen";
+    private static final String TOGGLE_DISABLE_ANIMATIONS = "toggle_disable_animations";
     private static final String DISPLAY_MAGNIFICATION_PREFERENCE_SCREEN =
-            "screen_magnification_preference_screen";
-    private static final String FONT_SIZE_PREFERENCE_SCREEN =
-            "font_size_preference_screen";
-    private static final String AUTOCLICK_PREFERENCE_SCREEN =
-            "autoclick_preference_screen";
+            "magnification_preference_screen";
     private static final String DISPLAY_DALTONIZER_PREFERENCE_SCREEN =
-            "daltonizer_preference_screen";
+            "daltonizer_preference";
 
     // Extras passed to sub-fragments.
     static final String EXTRA_PREFERENCE_KEY = "preference_key";
     static final String EXTRA_CHECKED = "checked";
     static final String EXTRA_TITLE = "title";
+    static final String EXTRA_TITLE_RES = "title_res";
+    static final String EXTRA_RESOLVE_INFO = "resolve_info";
     static final String EXTRA_SUMMARY = "summary";
     static final String EXTRA_SETTINGS_TITLE = "settings_title";
     static final String EXTRA_COMPONENT_NAME = "component_name";
     static final String EXTRA_SETTINGS_COMPONENT_NAME = "settings_component_name";
+    static final String EXTRA_VIDEO_RAW_RESOURCE_ID = "video_resource";
+    static final String EXTRA_LAUNCHED_FROM_SUW = "from_suw";
+    static final String EXTRA_ANIMATED_IMAGE_RES = "animated_image_res";
+    static final String EXTRA_HTML_DESCRIPTION = "html_description";
 
     // Timeout before we update the services if packages are added/removed
     // since the AccessibilityManagerService has to do that processing first
@@ -118,18 +119,13 @@ public class AccessibilitySettings extends SettingsPreferenceFragment implements
     // presentation.
     private static final long DELAY_UPDATE_SERVICES_MILLIS = 1000;
 
-    // Auxiliary members.
-    static final Set<ComponentName> sInstalledServices = new HashSet<>();
-
-    private final Map<String, String> mLongPressTimeoutValuetoTitleMap = new HashMap<>();
-
     private final Handler mHandler = new Handler();
 
     private final Runnable mUpdateRunnable = new Runnable() {
         @Override
         public void run() {
             if (getActivity() != null) {
-                updateServicesPreferences();
+                updateServicePreferences();
             }
         }
     };
@@ -160,555 +156,593 @@ public class AccessibilitySettings extends SettingsPreferenceFragment implements
         }
     };
 
-    private final SettingsContentObserver mSettingsContentObserver =
-            new SettingsContentObserver(mHandler) {
-                @Override
-                public void onChange(boolean selfChange, Uri uri) {
-                    updateServicesPreferences();
-                }
-            };
+    private final SettingsContentObserver mSettingsContentObserver;
 
-    private final RotationPolicyListener mRotationPolicyListener = new RotationPolicyListener() {
-        @Override
-        public void onChange() {
-            updateLockScreenRotationCheckbox();
-        }
-    };
+    private final Map<String, PreferenceCategory> mCategoryToPrefCategoryMap =
+            new ArrayMap<>();
+    private final Map<Preference, PreferenceCategory> mServicePreferenceToPreferenceCategoryMap =
+            new ArrayMap<>();
+    private final Map<ComponentName, PreferenceCategory> mPreBundledServiceComponentToCategoryMap =
+            new ArrayMap<>();
 
-    // Preference controls.
-    private PreferenceCategory mServicesCategory;
-    private PreferenceCategory mSystemsCategory;
-
-    private SwitchPreference mToggleHighTextContrastPreference;
-    private SwitchPreference mTogglePowerButtonEndsCallPreference;
-    private SwitchPreference mToggleLockScreenRotationPreference;
-    private SwitchPreference mToggleSpeakPasswordPreference;
     private SwitchPreference mToggleLargePointerIconPreference;
-    private SwitchPreference mToggleMasterMonoPreference;
-    private ListPreference mSelectLongPressTimeoutPreference;
-    private Preference mNoServicesMessagePreference;
-    private PreferenceScreen mCaptioningPreferenceScreen;
-    private PreferenceScreen mDisplayMagnificationPreferenceScreen;
-    private PreferenceScreen mFontSizePreferenceScreen;
-    private PreferenceScreen mAutoclickPreferenceScreen;
-    private PreferenceScreen mGlobalGesturePreferenceScreen;
-    private PreferenceScreen mDisplayDaltonizerPreferenceScreen;
-    private SwitchPreference mToggleInversionPreference;
+    private SwitchPreference mToggleDisableAnimationsPreference;
+    private Preference mDisplayMagnificationPreferenceScreen;
+    private Preference mDisplayDaltonizerPreferenceScreen;
+    private Preference mToggleInversionPreference;
 
-    private int mLongPressTimeoutDefault;
+    /**
+     * Check if the color transforms are color accelerated. Some transforms are experimental only
+     * on non-accelerated platforms due to the performance implications.
+     *
+     * @param context The current context
+     */
+    public static boolean isColorTransformAccelerated(Context context) {
+        return context.getResources()
+                .getBoolean(com.android.internal.R.bool.config_setColorTransformAccelerated);
+    }
 
-    private DevicePolicyManager mDpm;
+    public AccessibilitySettings() {
+        // Observe changes to anything that the shortcut can toggle, so we can reflect updates
+        final Collection<AccessibilityShortcutController.ToggleableFrameworkFeatureInfo> features =
+                AccessibilityShortcutController.getFrameworkShortcutFeaturesMap().values();
+        final List<String> shortcutFeatureKeys = new ArrayList<>(features.size());
+        for (AccessibilityShortcutController.ToggleableFrameworkFeatureInfo feature : features) {
+            shortcutFeatureKeys.add(feature.getSettingKey());
+        }
 
-    @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.ACCESSIBILITY;
+        // Observe changes from accessibility selection menu
+        shortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_BUTTON_TARGETS);
+        shortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_SHORTCUT_TARGET_SERVICE);
+        mSettingsContentObserver = new SettingsContentObserver(mHandler, shortcutFeatureKeys) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                updateAllPreferences();
+            }
+        };
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getMetricsCategory() {
+        return SettingsEnums.ACCESSIBILITY;
+    }
+
+    @Override
+    public int getHelpResource() {
         return R.string.help_uri_accessibility;
     }
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
-        addPreferencesFromResource(R.xml.accessibility_settings);
         initializeAllPreferences();
-        mDpm = (DevicePolicyManager) (getActivity()
-                .getSystemService(Context.DEVICE_POLICY_SERVICE));
     }
 
     @Override
-    public void onResume() {
-        super.onResume();
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        use(DarkUIPreferenceController.class).setParentFragment(this);
+        use(AccessibilityHearingAidPreferenceController.class)
+                .setFragmentManager(getFragmentManager());
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
         updateAllPreferences();
 
         mSettingsPackageMonitor.register(getActivity(), getActivity().getMainLooper(), false);
         mSettingsContentObserver.register(getContentResolver());
-        if (RotationPolicy.isRotationSupported(getActivity())) {
-            RotationPolicy.registerRotationPolicyListener(getActivity(),
-                    mRotationPolicyListener);
-        }
     }
 
     @Override
-    public void onPause() {
+    public void onStop() {
         mSettingsPackageMonitor.unregister();
         mSettingsContentObserver.unregister(getContentResolver());
-        if (RotationPolicy.isRotationSupported(getActivity())) {
-            RotationPolicy.unregisterRotationPolicyListener(getActivity(),
-                    mRotationPolicyListener);
-        }
-        super.onPause();
+        super.onStop();
     }
 
     @Override
-    public boolean onPreferenceChange(Preference preference, Object newValue) {
-        if (mSelectLongPressTimeoutPreference == preference) {
-            handleLongPressTimeoutPreferenceChange((String) newValue);
-            return true;
-        } else if (mToggleInversionPreference == preference) {
-            handleToggleInversionPreferenceChange((Boolean) newValue);
-            return true;
+    protected int getPreferenceScreenResId() {
+        return R.xml.accessibility_settings;
+    }
+
+    @Override
+    protected String getLogTag() {
+        return TAG;
+    }
+
+    /**
+     * Returns the summary for the current state of this accessibilityService.
+     *
+     * @param context A valid context
+     * @param info The accessibilityService's info
+     * @param serviceEnabled Whether the accessibility service is enabled.
+     * @return The service summary
+     */
+    @VisibleForTesting
+    static CharSequence getServiceSummary(Context context, AccessibilityServiceInfo info,
+            boolean serviceEnabled) {
+        if (serviceEnabled && info.crashed) {
+            return context.getText(R.string.accessibility_summary_state_stopped);
+        }
+
+        final CharSequence serviceState;
+        final int fragmentType = AccessibilityUtil.getAccessibilityServiceFragmentType(info);
+        if (fragmentType == AccessibilityServiceFragmentType.INVISIBLE_TOGGLE) {
+            final ComponentName componentName = new ComponentName(
+                    info.getResolveInfo().serviceInfo.packageName,
+                    info.getResolveInfo().serviceInfo.name);
+            final boolean shortcutEnabled = AccessibilityUtil.getUserShortcutTypesFromSettings(
+                    context, componentName) != AccessibilityUtil.UserShortcutType.EMPTY;
+            serviceState = shortcutEnabled
+                    ? context.getText(R.string.accessibility_summary_shortcut_enabled)
+                    : context.getText(R.string.accessibility_summary_shortcut_disabled);
+        } else {
+            serviceState = serviceEnabled
+                    ? context.getText(R.string.accessibility_summary_state_enabled)
+                    : context.getText(R.string.accessibility_summary_state_disabled);
+        }
+
+        final CharSequence serviceSummary = info.loadSummary(context.getPackageManager());
+        final String stateSummaryCombo = context.getString(
+                R.string.preference_summary_default_combination,
+                serviceState, serviceSummary);
+
+        return TextUtils.isEmpty(serviceSummary) ? serviceState : stateSummaryCombo;
+    }
+
+    /**
+     * Returns the description for the current state of this accessibilityService.
+     *
+     * @param context A valid context
+     * @param info The accessibilityService's info
+     * @param serviceEnabled Whether the accessibility service is enabled.
+     * @return The service description
+     */
+    @VisibleForTesting
+    static CharSequence getServiceDescription(Context context, AccessibilityServiceInfo info,
+            boolean serviceEnabled) {
+        if (serviceEnabled && info.crashed) {
+            return context.getText(R.string.accessibility_description_state_stopped);
+        }
+
+        return info.loadDescription(context.getPackageManager());
+    }
+
+    static boolean isRampingRingerEnabled(final Context context) {
+        return Settings.Global.getInt(
+                context.getContentResolver(), Settings.Global.APPLY_RAMPING_RINGER, 0) == 1;
+    }
+
+    private void initializeAllPreferences() {
+        for (int i = 0; i < CATEGORIES.length; i++) {
+            PreferenceCategory prefCategory = findPreference(CATEGORIES[i]);
+            mCategoryToPrefCategoryMap.put(CATEGORIES[i], prefCategory);
+        }
+
+        // Display inversion.
+        mToggleInversionPreference = findPreference(TOGGLE_INVERSION_PREFERENCE);
+
+        // Large pointer icon.
+        mToggleLargePointerIconPreference = findPreference(TOGGLE_LARGE_POINTER_ICON);
+
+        mToggleDisableAnimationsPreference = findPreference(TOGGLE_DISABLE_ANIMATIONS);
+
+        // Display magnification.
+        mDisplayMagnificationPreferenceScreen = findPreference(
+                DISPLAY_MAGNIFICATION_PREFERENCE_SCREEN);
+
+        // Display color adjustments.
+        mDisplayDaltonizerPreferenceScreen = findPreference(DISPLAY_DALTONIZER_PREFERENCE_SCREEN);
+    }
+
+    private void updateAllPreferences() {
+        updateSystemPreferences();
+        updateServicePreferences();
+    }
+
+    protected void updateServicePreferences() {
+        // Since services category is auto generated we have to do a pass
+        // to generate it since services can come and go and then based on
+        // the global accessibility state to decided whether it is enabled.
+        final ArrayList<Preference> servicePreferences =
+                new ArrayList<>(mServicePreferenceToPreferenceCategoryMap.keySet());
+        for (int i = 0; i < servicePreferences.size(); i++) {
+            Preference service = servicePreferences.get(i);
+            PreferenceCategory category = mServicePreferenceToPreferenceCategoryMap.get(service);
+            category.removePreference(service);
+        }
+
+        initializePreBundledServicesMapFromArray(CATEGORY_SCREEN_READER,
+                R.array.config_preinstalled_screen_reader_services);
+        initializePreBundledServicesMapFromArray(CATEGORY_AUDIO_AND_CAPTIONS,
+                R.array.config_preinstalled_audio_and_caption_services);
+        initializePreBundledServicesMapFromArray(CATEGORY_DISPLAY,
+                R.array.config_preinstalled_display_services);
+        initializePreBundledServicesMapFromArray(CATEGORY_INTERACTION_CONTROL,
+                R.array.config_preinstalled_interaction_control_services);
+
+        final List<RestrictedPreference> preferenceList = getInstalledAccessibilityList(
+                getPrefContext());
+
+        final PreferenceCategory downloadedServicesCategory =
+                mCategoryToPrefCategoryMap.get(CATEGORY_DOWNLOADED_SERVICES);
+
+        for (int i = 0, count = preferenceList.size(); i < count; ++i) {
+            final RestrictedPreference preference = preferenceList.get(i);
+            final ComponentName componentName = preference.getExtras().getParcelable(
+                    EXTRA_COMPONENT_NAME);
+            PreferenceCategory prefCategory = downloadedServicesCategory;
+            // Set the appropriate category if the service comes pre-installed.
+            if (mPreBundledServiceComponentToCategoryMap.containsKey(componentName)) {
+                prefCategory = mPreBundledServiceComponentToCategoryMap.get(componentName);
+            }
+            prefCategory.addPreference(preference);
+            mServicePreferenceToPreferenceCategoryMap.put(preference, prefCategory);
+        }
+
+        // Update the order of all the category according to the order defined in xml file.
+        updateCategoryOrderFromArray(CATEGORY_SCREEN_READER,
+            R.array.config_order_screen_reader_services);
+        updateCategoryOrderFromArray(CATEGORY_AUDIO_AND_CAPTIONS,
+            R.array.config_order_audio_and_caption_services);
+        updateCategoryOrderFromArray(CATEGORY_INTERACTION_CONTROL,
+            R.array.config_order_interaction_control_services);
+        updateCategoryOrderFromArray(CATEGORY_DISPLAY,
+            R.array.config_order_display_services);
+
+        // Need to check each time when updateServicePreferences() called.
+        if (downloadedServicesCategory.getPreferenceCount() == 0) {
+            getPreferenceScreen().removePreference(downloadedServicesCategory);
+        } else {
+            getPreferenceScreen().addPreference(downloadedServicesCategory);
+        }
+    }
+
+    private List<RestrictedPreference> getInstalledAccessibilityList(Context context) {
+        final AccessibilityManager a11yManager = AccessibilityManager.getInstance(context);
+        final RestrictedPreferenceHelper preferenceHelper = new RestrictedPreferenceHelper(context);
+
+        final List<AccessibilityShortcutInfo> installedShortcutList =
+                a11yManager.getInstalledAccessibilityShortcutListAsUser(context,
+                        UserHandle.myUserId());
+
+        // Remove duplicate item here, new a ArrayList to copy unmodifiable list result
+        // (getInstalledAccessibilityServiceList).
+        final List<AccessibilityServiceInfo> installedServiceList = new ArrayList<>(
+                a11yManager.getInstalledAccessibilityServiceList());
+        installedServiceList.removeIf(
+                target -> containsTargetNameInList(installedShortcutList, target));
+
+        final List<RestrictedPreference> activityList =
+                preferenceHelper.createAccessibilityActivityPreferenceList(installedShortcutList);
+
+        final List<RestrictedPreference> serviceList =
+                preferenceHelper.createAccessibilityServicePreferenceList(installedServiceList);
+
+        final List<RestrictedPreference> preferenceList = new ArrayList<>();
+        preferenceList.addAll(activityList);
+        preferenceList.addAll(serviceList);
+
+        return preferenceList;
+    }
+
+    private boolean containsTargetNameInList(List<AccessibilityShortcutInfo> shortcutInfos,
+            AccessibilityServiceInfo targetServiceInfo) {
+        final ServiceInfo serviceInfo = targetServiceInfo.getResolveInfo().serviceInfo;
+        final String servicePackageName = serviceInfo.packageName;
+        final CharSequence serviceLabel = serviceInfo.loadLabel(getPackageManager());
+
+        for (int i = 0, count = shortcutInfos.size(); i < count; ++i) {
+            final ActivityInfo activityInfo = shortcutInfos.get(i).getActivityInfo();
+            final String activityPackageName = activityInfo.packageName;
+            final CharSequence activityLabel = activityInfo.loadLabel(getPackageManager());
+            if (servicePackageName.equals(activityPackageName)
+                    && serviceLabel.equals(activityLabel)) {
+                return true;
+            }
         }
         return false;
     }
 
-    private void handleLongPressTimeoutPreferenceChange(String stringValue) {
-        Settings.Secure.putInt(getContentResolver(),
-                Settings.Secure.LONG_PRESS_TIMEOUT, Integer.parseInt(stringValue));
-        mSelectLongPressTimeoutPreference.setSummary(
-                mLongPressTimeoutValuetoTitleMap.get(stringValue));
-    }
-
-    private void handleToggleInversionPreferenceChange(boolean checked) {
-        Settings.Secure.putInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, (checked ? 1 : 0));
-    }
-
-    @Override
-    public boolean onPreferenceTreeClick(Preference preference) {
-        if (mToggleHighTextContrastPreference == preference) {
-            handleToggleTextContrastPreferenceClick();
-            return true;
-        } else if (mTogglePowerButtonEndsCallPreference == preference) {
-            handleTogglePowerButtonEndsCallPreferenceClick();
-            return true;
-        } else if (mToggleLockScreenRotationPreference == preference) {
-            handleLockScreenRotationPreferenceClick();
-            return true;
-        } else if (mToggleSpeakPasswordPreference == preference) {
-            handleToggleSpeakPasswordPreferenceClick();
-            return true;
-        } else if (mToggleLargePointerIconPreference == preference) {
-            handleToggleLargePointerIconPreferenceClick();
-            return true;
-        } else if (mToggleMasterMonoPreference == preference) {
-            handleToggleMasterMonoPreferenceClick();
-            return true;
-        } else if (mGlobalGesturePreferenceScreen == preference) {
-            handleToggleEnableAccessibilityGesturePreferenceClick();
-            return true;
-        } else if (mDisplayMagnificationPreferenceScreen == preference) {
-            handleDisplayMagnificationPreferenceScreenClick();
-            return true;
+    private void initializePreBundledServicesMapFromArray(String categoryKey, int key) {
+        String[] services = getResources().getStringArray(key);
+        PreferenceCategory category = mCategoryToPrefCategoryMap.get(categoryKey);
+        for (int i = 0; i < services.length; i++) {
+            ComponentName component = ComponentName.unflattenFromString(services[i]);
+            mPreBundledServiceComponentToCategoryMap.put(component, category);
         }
-        return super.onPreferenceTreeClick(preference);
     }
 
-    private void handleToggleTextContrastPreferenceClick() {
-        Settings.Secure.putInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED,
-                (mToggleHighTextContrastPreference.isChecked() ? 1 : 0));
+    /**
+     * Update the order of preferences in the category by matching their preference
+     * key with the string array of preference order which is defined in the xml.
+     *
+     * @param categoryKey The key of the category need to update the order
+     * @param key The key of the string array which defines the order of category
+     */
+    private void updateCategoryOrderFromArray(String categoryKey, int key) {
+        String[] services = getResources().getStringArray(key);
+        PreferenceCategory category = mCategoryToPrefCategoryMap.get(categoryKey);
+        int preferenceCount = category.getPreferenceCount();
+        int serviceLength = services.length;
+        for (int preferenceIndex = 0; preferenceIndex < preferenceCount; preferenceIndex++) {
+            for (int serviceIndex = 0; serviceIndex < serviceLength; serviceIndex++) {
+                if (category.getPreference(preferenceIndex).getKey()
+                        .equals(services[serviceIndex])) {
+                    category.getPreference(preferenceIndex).setOrder(serviceIndex);
+                    break;
+                }
+            }
+        }
     }
 
-    private void handleTogglePowerButtonEndsCallPreferenceClick() {
-        Settings.Secure.putInt(getContentResolver(),
-                Settings.Secure.INCALL_POWER_BUTTON_BEHAVIOR,
-                (mTogglePowerButtonEndsCallPreference.isChecked()
-                        ? Settings.Secure.INCALL_POWER_BUTTON_BEHAVIOR_HANGUP
-                        : Settings.Secure.INCALL_POWER_BUTTON_BEHAVIOR_SCREEN_OFF));
+    protected void updateSystemPreferences() {
+        // Move color inversion and color correction preferences to Display category if device
+        // supports HWC hardware-accelerated color transform.
+        if (ColorDisplayManager.isColorTransformAccelerated(getContext())) {
+            PreferenceCategory experimentalCategory =
+                    mCategoryToPrefCategoryMap.get(CATEGORY_EXPERIMENTAL);
+            PreferenceCategory displayCategory =
+                    mCategoryToPrefCategoryMap.get(CATEGORY_DISPLAY);
+            experimentalCategory.removePreference(mToggleInversionPreference);
+            experimentalCategory.removePreference(mDisplayDaltonizerPreferenceScreen);
+            mDisplayMagnificationPreferenceScreen.setSummary(
+                    ToggleScreenMagnificationPreferenceFragment.getServiceSummary(getContext()));
+            mDisplayDaltonizerPreferenceScreen.setOrder(
+                    mDisplayMagnificationPreferenceScreen.getOrder() + 1);
+            mDisplayDaltonizerPreferenceScreen.setSummary(AccessibilityUtil.getSummary(
+                    getContext(), Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED));
+            mToggleInversionPreference.setOrder(
+                    mDisplayDaltonizerPreferenceScreen.getOrder() + 1);
+            mToggleLargePointerIconPreference.setOrder(
+                    mToggleInversionPreference.getOrder() + 1);
+            mToggleDisableAnimationsPreference.setOrder(
+                    mToggleLargePointerIconPreference.getOrder() + 1);
+            mToggleInversionPreference.setSummary(AccessibilityUtil.getSummary(
+                    getContext(), Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED));
+            displayCategory.addPreference(mToggleInversionPreference);
+            displayCategory.addPreference(mDisplayDaltonizerPreferenceScreen);
+        }
     }
 
-    private void handleLockScreenRotationPreferenceClick() {
-        RotationPolicy.setRotationLockForAccessibility(getActivity(),
-                !mToggleLockScreenRotationPreference.isChecked());
-    }
+    public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
+            new BaseSearchIndexProvider(R.xml.accessibility_settings);
 
-    private void handleToggleSpeakPasswordPreferenceClick() {
-        Settings.Secure.putInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_SPEAK_PASSWORD,
-                mToggleSpeakPasswordPreference.isChecked() ? 1 : 0);
-    }
+    /**
+     * This class helps setup RestrictedPreference.
+     */
+    @VisibleForTesting
+    static class RestrictedPreferenceHelper {
+        private final Context mContext;
+        private final DevicePolicyManager mDpm;
+        private final PackageManager mPm;
 
-    private void handleToggleLargePointerIconPreferenceClick() {
-        Settings.Secure.putInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_LARGE_POINTER_ICON,
-                mToggleLargePointerIconPreference.isChecked() ? 1 : 0);
-    }
-
-    private void handleToggleMasterMonoPreferenceClick() {
-        Settings.System.putIntForUser(getContentResolver(), Settings.System.MASTER_MONO,
-                mToggleMasterMonoPreference.isChecked() ? 1 : 0, UserHandle.USER_CURRENT);
-    }
-
-    private void handleToggleEnableAccessibilityGesturePreferenceClick() {
-        Bundle extras = mGlobalGesturePreferenceScreen.getExtras();
-        extras.putString(EXTRA_TITLE, getString(
-                R.string.accessibility_global_gesture_preference_title));
-        extras.putString(EXTRA_SUMMARY, getString(
-                R.string.accessibility_global_gesture_preference_description));
-        extras.putBoolean(EXTRA_CHECKED, Settings.Global.getInt(getContentResolver(),
-                Settings.Global.ENABLE_ACCESSIBILITY_GLOBAL_GESTURE_ENABLED, 0) == 1);
-        super.onPreferenceTreeClick(mGlobalGesturePreferenceScreen);
-    }
-
-    private void handleDisplayMagnificationPreferenceScreenClick() {
-        Bundle extras = mDisplayMagnificationPreferenceScreen.getExtras();
-        extras.putString(EXTRA_TITLE, getString(
-                R.string.accessibility_screen_magnification_title));
-        extras.putCharSequence(EXTRA_SUMMARY, getActivity().getResources().getText(
-                R.string.accessibility_screen_magnification_summary));
-        extras.putBoolean(EXTRA_CHECKED, Settings.Secure.getInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_DISPLAY_MAGNIFICATION_ENABLED, 0) == 1);
-        super.onPreferenceTreeClick(mDisplayMagnificationPreferenceScreen);
-    }
-
-    private void initializeAllPreferences() {
-        mServicesCategory = (PreferenceCategory) findPreference(SERVICES_CATEGORY);
-        mSystemsCategory = (PreferenceCategory) findPreference(SYSTEM_CATEGORY);
-
-        // Text contrast.
-        mToggleHighTextContrastPreference =
-                (SwitchPreference) findPreference(TOGGLE_HIGH_TEXT_CONTRAST_PREFERENCE);
-
-        // Display inversion.
-        mToggleInversionPreference = (SwitchPreference) findPreference(TOGGLE_INVERSION_PREFERENCE);
-        mToggleInversionPreference.setOnPreferenceChangeListener(this);
-
-        // Power button ends calls.
-        mTogglePowerButtonEndsCallPreference =
-                (SwitchPreference) findPreference(TOGGLE_POWER_BUTTON_ENDS_CALL_PREFERENCE);
-        if (!KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_POWER)
-                || !Utils.isVoiceCapable(getActivity())) {
-            mSystemsCategory.removePreference(mTogglePowerButtonEndsCallPreference);
+        RestrictedPreferenceHelper(Context context) {
+            mContext = context;
+            mDpm = context.getSystemService(DevicePolicyManager.class);
+            mPm = context.getPackageManager();
         }
 
-        // Lock screen rotation.
-        mToggleLockScreenRotationPreference =
-                (SwitchPreference) findPreference(TOGGLE_LOCK_SCREEN_ROTATION_PREFERENCE);
-        if (!RotationPolicy.isRotationSupported(getActivity())) {
-            mSystemsCategory.removePreference(mToggleLockScreenRotationPreference);
+        /**
+         * Creates the list of {@link RestrictedPreference} with the installedServices arguments.
+         *
+         * @param installedServices The list of {@link AccessibilityServiceInfo}s of the
+         *                          installed accessibility services
+         * @return The list of {@link RestrictedPreference}
+         */
+        List<RestrictedPreference> createAccessibilityServicePreferenceList(
+                List<AccessibilityServiceInfo> installedServices) {
+
+            final Set<ComponentName> enabledServices =
+                    AccessibilityUtils.getEnabledServicesFromSettings(mContext);
+            final List<String> permittedServices = mDpm.getPermittedAccessibilityServices(
+                    UserHandle.myUserId());
+            final int installedServicesSize = installedServices.size();
+
+            final List<RestrictedPreference> preferenceList = new ArrayList<>(
+                    installedServicesSize);
+
+            for (int i = 0; i < installedServicesSize; ++i) {
+                final AccessibilityServiceInfo info = installedServices.get(i);
+                final ResolveInfo resolveInfo = info.getResolveInfo();
+                final String packageName = resolveInfo.serviceInfo.packageName;
+                final ComponentName componentName = new ComponentName(packageName,
+                        resolveInfo.serviceInfo.name);
+
+                final String key = componentName.flattenToString();
+                final CharSequence title = resolveInfo.loadLabel(mPm);
+                final boolean serviceEnabled = enabledServices.contains(componentName);
+                final CharSequence summary = getServiceSummary(mContext, info, serviceEnabled);
+                final String fragment = getAccessibilityServiceFragmentTypeName(info);
+
+                Drawable icon = resolveInfo.loadIcon(mPm);
+                if (resolveInfo.getIconResource() == 0) {
+                    icon = ContextCompat.getDrawable(mContext,
+                            R.drawable.ic_accessibility_generic);
+                }
+
+                final RestrictedPreference preference = createRestrictedPreference(key, title,
+                        summary, icon, fragment);
+
+                // permittedServices null means all accessibility services are allowed.
+                final boolean serviceAllowed =
+                        permittedServices == null || permittedServices.contains(packageName);
+
+                setRestrictedPreferenceEnabled(preference, packageName, serviceAllowed,
+                        serviceEnabled);
+
+                final String prefKey = preference.getKey();
+                final int imageRes = info.getAnimatedImageRes();
+                final CharSequence description = getServiceDescription(mContext, info,
+                        serviceEnabled);
+                final String htmlDescription = info.loadHtmlDescription(mPm);
+                final String settingsClassName = info.getSettingsActivityName();
+
+                putBasicExtras(preference, prefKey, title, description, imageRes, htmlDescription,
+                        componentName);
+                putServiceExtras(preference, resolveInfo, serviceEnabled);
+                putSettingsExtras(preference, packageName, settingsClassName);
+
+                preferenceList.add(preference);
+            }
+            return preferenceList;
         }
 
-        // Speak passwords.
-        mToggleSpeakPasswordPreference =
-                (SwitchPreference) findPreference(TOGGLE_SPEAK_PASSWORD_PREFERENCE);
+        /**
+         * Create the list of {@link RestrictedPreference} with the installedShortcuts arguments.
+         *
+         * @param installedShortcuts The list of {@link AccessibilityShortcutInfo}s of the
+         *                           installed accessibility shortcuts
+         * @return The list of {@link RestrictedPreference}
+         */
+        List<RestrictedPreference> createAccessibilityActivityPreferenceList(
+                List<AccessibilityShortcutInfo> installedShortcuts) {
+            final Set<ComponentName> enabledServices =
+                    AccessibilityUtils.getEnabledServicesFromSettings(mContext);
+            final List<String> permittedServices = mDpm.getPermittedAccessibilityServices(
+                    UserHandle.myUserId());
 
-        // Large pointer icon.
-        mToggleLargePointerIconPreference =
-                (SwitchPreference) findPreference(TOGGLE_LARGE_POINTER_ICON);
+            final int installedShortcutsSize = installedShortcuts.size();
+            final List<RestrictedPreference> preferenceList = new ArrayList<>(
+                    installedShortcutsSize);
 
-        // Master Mono
-        mToggleMasterMonoPreference =
-                (SwitchPreference) findPreference(TOGGLE_MASTER_MONO);
+            for (int i = 0; i < installedShortcutsSize; ++i) {
+                final AccessibilityShortcutInfo info = installedShortcuts.get(i);
+                final ActivityInfo activityInfo = info.getActivityInfo();
+                final ComponentName componentName = info.getComponentName();
 
-        // Long press timeout.
-        mSelectLongPressTimeoutPreference =
-                (ListPreference) findPreference(SELECT_LONG_PRESS_TIMEOUT_PREFERENCE);
-        mSelectLongPressTimeoutPreference.setOnPreferenceChangeListener(this);
-        if (mLongPressTimeoutValuetoTitleMap.size() == 0) {
-            String[] timeoutValues = getResources().getStringArray(
-                    R.array.long_press_timeout_selector_values);
-            mLongPressTimeoutDefault = Integer.parseInt(timeoutValues[0]);
-            String[] timeoutTitles = getResources().getStringArray(
-                    R.array.long_press_timeout_selector_titles);
-            final int timeoutValueCount = timeoutValues.length;
-            for (int i = 0; i < timeoutValueCount; i++) {
-                mLongPressTimeoutValuetoTitleMap.put(timeoutValues[i], timeoutTitles[i]);
+                final String key = componentName.flattenToString();
+                final CharSequence title = activityInfo.loadLabel(mPm);
+                final String summary = info.loadSummary(mPm);
+                final String fragment =
+                        LaunchAccessibilityActivityPreferenceFragment.class.getName();
+
+                Drawable icon = activityInfo.loadIcon(mPm);
+                if (activityInfo.getIconResource() == 0) {
+                    icon = ContextCompat.getDrawable(mContext, R.drawable.ic_accessibility_generic);
+                }
+
+                final RestrictedPreference preference = createRestrictedPreference(key, title,
+                        summary, icon, fragment);
+
+                final String packageName = componentName.getPackageName();
+                // permittedServices null means all accessibility services are allowed.
+                final boolean serviceAllowed =
+                        permittedServices == null || permittedServices.contains(packageName);
+                final boolean serviceEnabled = enabledServices.contains(componentName);
+
+                setRestrictedPreferenceEnabled(preference, packageName, serviceAllowed,
+                        serviceEnabled);
+
+                final String prefKey = preference.getKey();
+                final String description = info.loadDescription(mPm);
+                final int imageRes = info.getAnimatedImageRes();
+                final String htmlDescription = info.loadHtmlDescription(mPm);
+                final String settingsClassName = info.getSettingsActivityName();
+
+                putBasicExtras(preference, prefKey, title, description, imageRes, htmlDescription,
+                        componentName);
+                putSettingsExtras(preference, packageName, settingsClassName);
+
+                preferenceList.add(preference);
+            }
+            return preferenceList;
+        }
+
+        private String getAccessibilityServiceFragmentTypeName(AccessibilityServiceInfo info) {
+            // Shorten the name to avoid exceeding 100 characters in one line.
+            final String volumeShortcutToggleAccessibilityServicePreferenceFragment =
+                    VolumeShortcutToggleAccessibilityServicePreferenceFragment.class.getName();
+
+            switch (AccessibilityUtil.getAccessibilityServiceFragmentType(info)) {
+                case AccessibilityServiceFragmentType.VOLUME_SHORTCUT_TOGGLE:
+                    return volumeShortcutToggleAccessibilityServicePreferenceFragment;
+                case AccessibilityServiceFragmentType.INVISIBLE_TOGGLE:
+                    return InvisibleToggleAccessibilityServicePreferenceFragment.class.getName();
+                case AccessibilityServiceFragmentType.TOGGLE:
+                    return ToggleAccessibilityServicePreferenceFragment.class.getName();
+                default:
+                    // impossible status
+                    throw new AssertionError();
             }
         }
 
-        // Captioning.
-        mCaptioningPreferenceScreen = (PreferenceScreen) findPreference(
-                CAPTIONING_PREFERENCE_SCREEN);
+        private RestrictedPreference createRestrictedPreference(String key, CharSequence title,
+                CharSequence summary, Drawable icon, String fragment) {
+            final RestrictedPreference preference = new RestrictedPreference(mContext);
 
-        // Display magnification.
-        mDisplayMagnificationPreferenceScreen = (PreferenceScreen) findPreference(
-                DISPLAY_MAGNIFICATION_PREFERENCE_SCREEN);
-
-        // Font size.
-        mFontSizePreferenceScreen = (PreferenceScreen) findPreference(
-                FONT_SIZE_PREFERENCE_SCREEN);
-
-        // Autoclick after pointer stops.
-        mAutoclickPreferenceScreen = (PreferenceScreen) findPreference(
-                AUTOCLICK_PREFERENCE_SCREEN);
-
-        // Display color adjustments.
-        mDisplayDaltonizerPreferenceScreen = (PreferenceScreen) findPreference(
-                DISPLAY_DALTONIZER_PREFERENCE_SCREEN);
-
-        // Global gesture.
-        mGlobalGesturePreferenceScreen =
-                (PreferenceScreen) findPreference(ENABLE_ACCESSIBILITY_GESTURE_PREFERENCE_SCREEN);
-        final int longPressOnPowerBehavior = getActivity().getResources().getInteger(
-                com.android.internal.R.integer.config_longPressOnPowerBehavior);
-        final int LONG_PRESS_POWER_GLOBAL_ACTIONS = 1;
-        if (!KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_POWER)
-                || longPressOnPowerBehavior != LONG_PRESS_POWER_GLOBAL_ACTIONS) {
-            // Remove accessibility shortcut if power key is not present
-            // nor long press power does not show global actions menu.
-            mSystemsCategory.removePreference(mGlobalGesturePreferenceScreen);
-        }
-    }
-
-    private void updateAllPreferences() {
-        updateServicesPreferences();
-        updateSystemPreferences();
-    }
-
-    private void updateServicesPreferences() {
-        // Since services category is auto generated we have to do a pass
-        // to generate it since services can come and go and then based on
-        // the global accessibility state to decided whether it is enabled.
-
-        // Generate.
-        mServicesCategory.removeAll();
-
-        AccessibilityManager accessibilityManager = AccessibilityManager.getInstance(getActivity());
-
-        List<AccessibilityServiceInfo> installedServices =
-                accessibilityManager.getInstalledAccessibilityServiceList();
-        Set<ComponentName> enabledServices = AccessibilityUtils.getEnabledServicesFromSettings(
-                getActivity());
-        List<String> permittedServices = mDpm.getPermittedAccessibilityServices(
-                UserHandle.myUserId());
-        final boolean accessibilityEnabled = Settings.Secure.getInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1;
-
-        for (int i = 0, count = installedServices.size(); i < count; ++i) {
-            AccessibilityServiceInfo info = installedServices.get(i);
-
-            RestrictedPreference preference = new RestrictedPreference(getActivity());
-            String title = info.getResolveInfo().loadLabel(getPackageManager()).toString();
-
-            ServiceInfo serviceInfo = info.getResolveInfo().serviceInfo;
-            ComponentName componentName = new ComponentName(serviceInfo.packageName,
-                    serviceInfo.name);
-
-            preference.setKey(componentName.flattenToString());
-
+            preference.setKey(key);
             preference.setTitle(title);
-            final boolean serviceEnabled = accessibilityEnabled
-                    && enabledServices.contains(componentName);
-            String serviceEnabledString;
-            if (serviceEnabled) {
-                serviceEnabledString = getString(R.string.accessibility_feature_state_on);
-            } else {
-                serviceEnabledString = getString(R.string.accessibility_feature_state_off);
-            }
+            preference.setSummary(summary);
+            Utils.setSafeIcon(preference, icon);
+            preference.setFragment(fragment);
+            preference.setIconSize(ICON_SIZE_MEDIUM);
+            preference.setPersistent(false); // Disable SharedPreferences.
+            preference.setOrder(FIRST_PREFERENCE_IN_CATEGORY_INDEX);
 
-            // Disable all accessibility services that are not permitted.
-            String packageName = serviceInfo.packageName;
-            boolean serviceAllowed =
-                    permittedServices == null || permittedServices.contains(packageName);
-            if (!serviceAllowed && !serviceEnabled) {
-                EnforcedAdmin admin = RestrictedLockUtils.checkIfAccessibilityServiceDisallowed(
-                        getActivity(), serviceInfo.packageName, UserHandle.myUserId());
+            return preference;
+        }
+
+        private void setRestrictedPreferenceEnabled(RestrictedPreference preference,
+                String packageName, boolean serviceAllowed, boolean serviceEnabled) {
+            if (serviceAllowed || serviceEnabled) {
+                preference.setEnabled(true);
+            } else {
+                // Disable accessibility service that are not permitted.
+                final EnforcedAdmin admin =
+                        RestrictedLockUtilsInternal.checkIfAccessibilityServiceDisallowed(
+                                mContext, packageName, UserHandle.myUserId());
                 if (admin != null) {
                     preference.setDisabledByAdmin(admin);
                 } else {
                     preference.setEnabled(false);
                 }
-            } else {
-                preference.setEnabled(true);
             }
+        }
 
-            preference.setSummary(serviceEnabledString);
+        /** Puts the basic extras into {@link RestrictedPreference}'s getExtras(). */
+        private void putBasicExtras(RestrictedPreference preference, String prefKey,
+                CharSequence title, CharSequence summary, int imageRes, String htmlDescription,
+                ComponentName componentName) {
+            final Bundle extras = preference.getExtras();
+            extras.putString(EXTRA_PREFERENCE_KEY, prefKey);
+            extras.putCharSequence(EXTRA_TITLE, title);
+            extras.putCharSequence(EXTRA_SUMMARY, summary);
+            extras.putParcelable(EXTRA_COMPONENT_NAME, componentName);
+            extras.putInt(EXTRA_ANIMATED_IMAGE_RES, imageRes);
+            extras.putString(AccessibilitySettings.EXTRA_HTML_DESCRIPTION, htmlDescription);
+        }
 
-            preference.setOrder(i);
-            preference.setFragment(ToggleAccessibilityServicePreferenceFragment.class.getName());
-            preference.setPersistent(true);
+        /**
+         * Puts the service extras into {@link RestrictedPreference}'s getExtras().
+         *
+         * Called by {@link AccessibilityServiceInfo} for now.
+         */
+        private void putServiceExtras(RestrictedPreference preference, ResolveInfo resolveInfo,
+                Boolean serviceEnabled) {
+            final Bundle extras = preference.getExtras();
 
-            Bundle extras = preference.getExtras();
-            extras.putString(EXTRA_PREFERENCE_KEY, preference.getKey());
+            extras.putParcelable(EXTRA_RESOLVE_INFO, resolveInfo);
             extras.putBoolean(EXTRA_CHECKED, serviceEnabled);
-            extras.putString(EXTRA_TITLE, title);
+        }
 
-            String description = info.loadDescription(getPackageManager());
-            if (TextUtils.isEmpty(description)) {
-                description = getString(R.string.accessibility_service_default_description);
-            }
-            extras.putString(EXTRA_SUMMARY, description);
+        /**
+         * Puts the settings extras into {@link RestrictedPreference}'s getExtras().
+         *
+         * Called when settings UI is needed.
+         */
+        private void putSettingsExtras(RestrictedPreference preference, String packageName,
+                String settingsClassName) {
+            final Bundle extras = preference.getExtras();
 
-            String settingsClassName = info.getSettingsActivityName();
             if (!TextUtils.isEmpty(settingsClassName)) {
                 extras.putString(EXTRA_SETTINGS_TITLE,
-                        getString(R.string.accessibility_menu_item_settings));
+                        mContext.getText(R.string.accessibility_menu_item_settings).toString());
                 extras.putString(EXTRA_SETTINGS_COMPONENT_NAME,
-                        new ComponentName(info.getResolveInfo().serviceInfo.packageName,
-                                settingsClassName).flattenToString());
+                        new ComponentName(packageName, settingsClassName).flattenToString());
             }
-
-            extras.putParcelable(EXTRA_COMPONENT_NAME, componentName);
-
-            mServicesCategory.addPreference(preference);
-        }
-
-        if (mServicesCategory.getPreferenceCount() == 0) {
-            if (mNoServicesMessagePreference == null) {
-                mNoServicesMessagePreference = new Preference(getPrefContext());
-                mNoServicesMessagePreference.setPersistent(false);
-                mNoServicesMessagePreference.setLayoutResource(
-                        R.layout.text_description_preference);
-                mNoServicesMessagePreference.setSelectable(false);
-                mNoServicesMessagePreference.setSummary(
-                        getString(R.string.accessibility_no_services_installed));
-            }
-            mServicesCategory.addPreference(mNoServicesMessagePreference);
         }
     }
-
-    private void updateSystemPreferences() {
-        // Text contrast.
-        mToggleHighTextContrastPreference.setChecked(
-                Settings.Secure.getInt(getContentResolver(),
-                        Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED, 0) == 1);
-
-        // If the quick setting is enabled, the preference MUST be enabled.
-        mToggleInversionPreference.setChecked(Settings.Secure.getInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0) == 1);
-
-        // Power button ends calls.
-        if (KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_POWER)
-                && Utils.isVoiceCapable(getActivity())) {
-            final int incallPowerBehavior = Settings.Secure.getInt(getContentResolver(),
-                    Settings.Secure.INCALL_POWER_BUTTON_BEHAVIOR,
-                    Settings.Secure.INCALL_POWER_BUTTON_BEHAVIOR_DEFAULT);
-            final boolean powerButtonEndsCall =
-                    (incallPowerBehavior == Settings.Secure.INCALL_POWER_BUTTON_BEHAVIOR_HANGUP);
-            mTogglePowerButtonEndsCallPreference.setChecked(powerButtonEndsCall);
-        }
-
-        // Auto-rotate screen
-        updateLockScreenRotationCheckbox();
-
-        // Speak passwords.
-        final boolean speakPasswordEnabled = Settings.Secure.getInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_SPEAK_PASSWORD, 0) != 0;
-        mToggleSpeakPasswordPreference.setChecked(speakPasswordEnabled);
-
-        // Large pointer icon.
-        mToggleLargePointerIconPreference.setChecked(Settings.Secure.getInt(getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_LARGE_POINTER_ICON, 0) != 0);
-
-        // Master mono
-        updateMasterMono();
-
-        // Long press timeout.
-        final int longPressTimeout = Settings.Secure.getInt(getContentResolver(),
-                Settings.Secure.LONG_PRESS_TIMEOUT, mLongPressTimeoutDefault);
-        String value = String.valueOf(longPressTimeout);
-        mSelectLongPressTimeoutPreference.setValue(value);
-        mSelectLongPressTimeoutPreference.setSummary(mLongPressTimeoutValuetoTitleMap.get(value));
-
-        updateFeatureSummary(Settings.Secure.ACCESSIBILITY_CAPTIONING_ENABLED,
-                mCaptioningPreferenceScreen);
-        updateFeatureSummary(Settings.Secure.ACCESSIBILITY_DISPLAY_MAGNIFICATION_ENABLED,
-                mDisplayMagnificationPreferenceScreen);
-        updateFeatureSummary(Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED,
-                mDisplayDaltonizerPreferenceScreen);
-
-        updateFontSizeSummary(mFontSizePreferenceScreen);
-
-        updateAutoclickSummary(mAutoclickPreferenceScreen);
-
-        // Global gesture
-        final boolean globalGestureEnabled = Settings.Global.getInt(getContentResolver(),
-                Settings.Global.ENABLE_ACCESSIBILITY_GLOBAL_GESTURE_ENABLED, 0) == 1;
-        if (globalGestureEnabled) {
-            mGlobalGesturePreferenceScreen.setSummary(
-                    R.string.accessibility_global_gesture_preference_summary_on);
-        } else {
-            mGlobalGesturePreferenceScreen.setSummary(
-                    R.string.accessibility_global_gesture_preference_summary_off);
-        }
-    }
-
-    private void updateFeatureSummary(String prefKey, Preference pref) {
-        final boolean enabled = Settings.Secure.getInt(getContentResolver(), prefKey, 0) == 1;
-        pref.setSummary(enabled ? R.string.accessibility_feature_state_on
-                : R.string.accessibility_feature_state_off);
-    }
-
-    private void updateAutoclickSummary(Preference pref) {
-        final boolean enabled = Settings.Secure.getInt(
-                getContentResolver(), Settings.Secure.ACCESSIBILITY_AUTOCLICK_ENABLED, 0) == 1;
-        if (!enabled) {
-            pref.setSummary(R.string.accessibility_feature_state_off);
-            return;
-        }
-        int delay = Settings.Secure.getInt(
-                getContentResolver(), Settings.Secure.ACCESSIBILITY_AUTOCLICK_DELAY,
-                AccessibilityManager.AUTOCLICK_DELAY_DEFAULT);
-        pref.setSummary(ToggleAutoclickPreferenceFragment.getAutoclickPreferenceSummary(
-                getResources(), delay));
-    }
-
-    private void updateFontSizeSummary(Preference pref) {
-        final float currentScale = Settings.System.getFloat(getContext().getContentResolver(),
-                Settings.System.FONT_SCALE, 1.0f);
-        final Resources res = getContext().getResources();
-        final String[] entries = res.getStringArray(R.array.entries_font_size);
-        final String[] strEntryValues = res.getStringArray(R.array.entryvalues_font_size);
-        final int index = ToggleFontSizePreferenceFragment.fontSizeValueToIndex(currentScale,
-                strEntryValues);
-        pref.setSummary(entries[index]);
-    }
-
-    private void updateLockScreenRotationCheckbox() {
-        Context context = getActivity();
-        if (context != null) {
-            mToggleLockScreenRotationPreference.setChecked(
-                    !RotationPolicy.isRotationLocked(context));
-        }
-    }
-
-    private void updateMasterMono() {
-        final boolean masterMono = Settings.System.getIntForUser(
-                getContentResolver(), Settings.System.MASTER_MONO,
-                0 /* default */, UserHandle.USER_CURRENT) == 1;
-        mToggleMasterMonoPreference.setChecked(masterMono);
-    }
-
-    public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
-            new BaseSearchIndexProvider() {
-        @Override
-        public List<SearchIndexableRaw> getRawDataToIndex(Context context, boolean enabled) {
-            List<SearchIndexableRaw> indexables = new ArrayList<SearchIndexableRaw>();
-
-            PackageManager packageManager = context.getPackageManager();
-            AccessibilityManager accessibilityManager = (AccessibilityManager)
-                    context.getSystemService(Context.ACCESSIBILITY_SERVICE);
-
-            String screenTitle = context.getResources().getString(
-                    R.string.accessibility_services_title);
-
-            // Indexing all services, regardless if enabled.
-            List<AccessibilityServiceInfo> services = accessibilityManager
-                    .getInstalledAccessibilityServiceList();
-            final int serviceCount = services.size();
-            for (int i = 0; i < serviceCount; i++) {
-                AccessibilityServiceInfo service = services.get(i);
-                if (service == null || service.getResolveInfo() == null) {
-                    continue;
-                }
-
-                ServiceInfo serviceInfo = service.getResolveInfo().serviceInfo;
-                ComponentName componentName = new ComponentName(serviceInfo.packageName,
-                        serviceInfo.name);
-
-                SearchIndexableRaw indexable = new SearchIndexableRaw(context);
-                indexable.key = componentName.flattenToString();
-                indexable.title = service.getResolveInfo().loadLabel(packageManager).toString();
-                indexable.summaryOn = context.getString(R.string.accessibility_feature_state_on);
-                indexable.summaryOff = context.getString(R.string.accessibility_feature_state_off);
-                indexable.screenTitle = screenTitle;
-                indexables.add(indexable);
-            }
-
-            return indexables;
-        }
-
-        @Override
-        public List<SearchIndexableResource> getXmlResourcesToIndex(Context context,
-               boolean enabled) {
-            List<SearchIndexableResource> indexables = new ArrayList<SearchIndexableResource>();
-            SearchIndexableResource indexable = new SearchIndexableResource(context);
-            indexable.xmlResId = R.xml.accessibility_settings;
-            indexables.add(indexable);
-            return indexables;
-        }
-    };
 }

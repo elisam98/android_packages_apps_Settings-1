@@ -16,6 +16,12 @@
 
 package com.android.settings.deviceinfo;
 
+import static android.os.storage.DiskInfo.EXTRA_DISK_ID;
+
+import static com.android.settings.deviceinfo.StorageWizardBase.EXTRA_FORMAT_FORGET_UUID;
+import static com.android.settings.deviceinfo.StorageWizardBase.EXTRA_FORMAT_PRIVATE;
+
+import android.app.settings.SettingsEnums;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.storage.DiskInfo;
@@ -29,23 +35,21 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.settings.InstrumentedFragment;
 import com.android.settings.R;
+import com.android.settings.core.InstrumentedFragment;
 
 public class PrivateVolumeFormat extends InstrumentedFragment {
     private VolumeInfo mVolume;
     private DiskInfo mDisk;
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.DEVICEINFO_STORAGE;
+    public int getMetricsCategory() {
+        return SettingsEnums.DEVICEINFO_STORAGE;
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
-        setHasOptionsMenu(true);
         final StorageManager storage = getActivity().getSystemService(StorageManager.class);
         final String volumeId = getArguments().getString(VolumeInfo.EXTRA_VOLUME_ID);
         mVolume = storage.findVolumeById(volumeId);
@@ -66,9 +70,9 @@ public class PrivateVolumeFormat extends InstrumentedFragment {
         @Override
         public void onClick(View v) {
             final Intent intent = new Intent(getActivity(), StorageWizardFormatProgress.class);
-            intent.putExtra(DiskInfo.EXTRA_DISK_ID, mDisk.getId());
-            intent.putExtra(StorageWizardFormatConfirm.EXTRA_FORMAT_PRIVATE, false);
-            intent.putExtra(StorageWizardFormatConfirm.EXTRA_FORGET_UUID, mVolume.getFsUuid());
+            intent.putExtra(EXTRA_DISK_ID, mDisk.getId());
+            intent.putExtra(EXTRA_FORMAT_PRIVATE, false);
+            intent.putExtra(EXTRA_FORMAT_FORGET_UUID, mVolume.getFsUuid());
             startActivity(intent);
             getActivity().finish();
         }

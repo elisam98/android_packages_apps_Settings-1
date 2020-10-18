@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2014 The Android Open Source Project
+<!-- Copyright (C) 2017 The Android Open Source Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -15,53 +15,93 @@
 -->
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:settings="http://schemas.android.com/apk/res/com.android.settings"
-        android:title="@string/app_notifications_title"
-        android:key="app_notification_settings">
+        xmlns:settings="http://schemas.android.com/apk/res-auto"
+        android:key="app_notifications">
 
-    <!-- Importance -->
-    <!-- Block -->
+    <com.android.settingslib.widget.LayoutPreference
+        android:key="pref_app_header"
+        android:layout="@layout/settings_entity_header" />
+
+    <com.android.settingslib.widget.LayoutPreference
+        android:key="block"
+        android:layout="@layout/styled_switch_bar" />
+
+    <com.android.settings.notification.app.NotificationFooterPreference
+        android:key="block_desc" />
+
+
+    <!-- Conversations added here -->
+    <PreferenceCategory
+        android:title="@string/conversations_category_title"
+        android:key="conversations"
+        android:visibility="gone"
+        settings:allowDividerAbove="false"
+        settings:allowDividerBelow="false">
+    </PreferenceCategory>
     <com.android.settingslib.RestrictedSwitchPreference
-            android:key="block"
-            android:title="@string/app_notification_block_title"
-            android:summary="@string/app_notification_block_summary"
-            android:order="2"
-            settings:useAdditionalSummary="true"
-            settings:restrictedSwitchSummary="@string/enabled_by_admin" />
-    <!-- Silent -->
+        android:key="invalid_conversation_switch"
+        android:title="@string/conversation_section_switch_title" />
+    <Preference
+        android:key="invalid_conversation_info"/>
+
+    <!--Bubbles -->
+    <Preference
+        android:key="bubble_pref_link"
+        android:title="@string/notification_bubbles_title"
+        android:icon="@drawable/ic_create_bubble"
+        settings:allowDividerAbove="false"
+        settings:controller="com.android.settings.notification.app.BubbleSummaryPreferenceController">
+    </Preference>
+
+    <!-- Channels/Channel groups added here -->
+    <PreferenceCategory
+        android:key="channels"
+        android:layout="@layout/empty_view"
+        settings:allowDividerAbove="true"
+        settings:allowDividerBelow="false" />
+
+    <!-- Importance toggle -->
     <com.android.settingslib.RestrictedSwitchPreference
-            android:key="silent"
-            android:title="@string/show_silently"
-            android:summary="@string/show_silently_summary"
-            android:order="3"
-            settings:useAdditionalSummary="true" />
-    <!-- Slider -->
-    <com.android.settings.notification.ImportanceSeekBarPreference
-            android:key="importance"
-            android:title="@string/notification_importance_title"
-            android:order="4"/>
+        android:key="allow_sound"
+        android:title="@string/allow_interruption"
+        android:summary="@string/allow_interruption_summary" />
 
     <!-- Visibility Override -->
-    <com.android.settings.notification.RestrictedDropDownPreference
-            android:key="visibility_override"
-            android:title="@string/app_notification_visibility_override_title"
-            android:order="5" />
+    <com.android.settings.RestrictedListPreference
+        android:key="visibility_override"
+        android:title="@string/app_notification_visibility_override_title"/>
 
     <!-- Bypass DND -->
     <com.android.settingslib.RestrictedSwitchPreference
-            android:key="bypass_dnd"
-            android:title="@string/app_notification_override_dnd_title"
-            android:summary="@string/app_notification_override_dnd_summary"
-            android:order="6"
-            settings:useAdditionalSummary="true" />
+        android:key="bypass_dnd"
+        android:title="@string/app_notification_override_dnd_title"
+        android:summary="@string/app_notification_override_dnd_summary"
+        settings:useAdditionalSummary="true"/>
 
-    <!-- Sound timeout -->
-    <com.android.settings.notification.RestrictedDropDownPreference
-            android:key="sound_timeout"
-            android:title="@string/app_notification_sound_timeout_title"
-            android:entries="@array/app_notification_sound_timeout_entries"
-            android:entryValues="@array/app_notification_sound_timeout_values"
-            android:order="7"
-            android:persistent="false" />
+    <PreferenceCategory
+        android:key="app_advanced"
+        android:order="1000"
+        settings:initialExpandedChildrenCount="0">
+        <!-- Show badge -->
+        <com.android.settingslib.RestrictedSwitchPreference
+            android:key="badge"
+            android:title="@string/notification_badge_title"
+            settings:useAdditionalSummary="true"
+            android:order="1001"
+            settings:restrictedSwitchSummary="@string/enabled_by_admin" />
+        <Preference
+            android:key="app_link"
+            android:order="1003"
+            android:title="@string/app_settings_link" />
+
+    </PreferenceCategory>
+
+    <com.android.settings.notification.app.NotificationFooterPreference
+        android:key="desc"
+        android:order="5000" />
+
+    <com.android.settings.notification.app.NotificationFooterPreference
+        android:key="deleted"
+        android:order="8000" />
 
 </PreferenceScreen>

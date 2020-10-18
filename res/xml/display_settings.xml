@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2010 The Android Open Source Project
+<!-- Copyright (C) 2016 The Android Open Source Project
+
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
      You may obtain a copy of the License at
+
           http://www.apache.org/licenses/LICENSE-2.0
+
      Unless required by applicable law or agreed to in writing, software
      distributed under the License is distributed on an "AS IS" BASIS,
      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -11,138 +14,145 @@
      limitations under the License.
 -->
 
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-                  xmlns:settings="http://schemas.android.com/apk/res/com.android.settings"
-                  xmlns:cm="http://schemas.android.com/apk/res/cyanogenmod.platform"
-        android:title="@string/display_settings"
-        settings:keywords="@string/keywords_display">
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:settings="http://schemas.android.com/apk/res-auto"
+    android:key="display_settings_screen"
+    android:title="@string/display_settings"
+    settings:keywords="@string/keywords_display"
+    settings:initialExpandedChildrenCount="5">
 
-    <PreferenceCategory
-            android:key="display"
-            android:title="@string/display_label">
+    <com.android.settingslib.RestrictedPreference
+        android:key="brightness"
+        android:title="@string/brightness"
+        settings:keywords="@string/keywords_display_brightness_level"
+        settings:useAdminDisabledSummary="true"
+        settings:userRestriction="no_config_brightness">
+        <intent android:action="com.android.intent.action.SHOW_BRIGHTNESS_DIALOG" />
+    </com.android.settingslib.RestrictedPreference>
 
-        <PreferenceScreen
-                android:key="brightness"
-                android:title="@string/brightness"
-                settings:keywords="@string/keywords_display_brightness_level">
-            <intent android:action="android.intent.action.SHOW_BRIGHTNESS_DIALOG" />
-        </PreferenceScreen>
+    <com.android.settings.display.darkmode.DarkModePreference
+        android:key="dark_ui_mode"
+        android:title="@string/dark_ui_mode"
+        android:fragment="com.android.settings.display.darkmode.DarkModeSettingsFragment"
+        android:widgetLayout="@null"
+        settings:widgetLayout="@null"
+        settings:controller="com.android.settings.display.DarkUIPreferenceController"
+        settings:keywords="@string/keywords_dark_ui_mode"/>
 
-        <SwitchPreference
-                android:key="auto_brightness"
-                android:title="@string/auto_brightness_title"
-                settings:keywords="@string/keywords_display_auto_brightness"
-                android:summary="@string/auto_brightness_summary" />
+    <com.android.settings.display.NightDisplayPreference
+        android:key="night_display"
+        android:title="@string/night_display_title"
+        android:fragment="com.android.settings.display.NightDisplaySettings"
+        android:widgetLayout="@null"
+        settings:widgetLayout="@null"/>
 
-        <!-- LiveDisplay -->
-        <!-- <org.cyanogenmod.internal.cmparts.CMPartsPreference
-            android:key="livedisplay"
-            cm:requiresFeature="org.cyanogenmod.livedisplay" /> -->
+    <Preference
+        android:key="auto_brightness_entry"
+        android:title="@string/auto_brightness_title"
+        android:summary="@string/summary_placeholder"
+        android:fragment="com.android.settings.display.AutoBrightnessSettings"
+        settings:controller="com.android.settings.display.AutoBrightnessPreferenceController"/>
 
-        <!-- Rotation -->
-        <org.cyanogenmod.internal.cmparts.CMPartsPreference
-            android:key="rotation"
-            cm:requiresFeature="android.hardware.sensor.accelerometer" />
+    <com.android.settingslib.RestrictedPreference
+        android:key="wallpaper"
+        android:title="@string/wallpaper_settings_title"
+        settings:keywords="@string/keywords_display_wallpaper"
+        settings:useAdminDisabledSummary="true"
+        settings:controller="com.android.settings.display.WallpaperPreferenceController">
+    </com.android.settingslib.RestrictedPreference>
 
-        <!-- <com.android.settings.display.NightDisplayPreference
-                android:key="night_display"
-                android:title="@string/night_display_title"
-                android:fragment="com.android.settings.display.NightDisplaySettings"
-                android:widgetLayout="@null"
-                settings:keywords="@string/keywords_display_night_display"
-                cm:requiresFeature="!org.cyanogenmod.livedisplay" /> -->
+    <!-- Cross-listed item, if you change this, also change it in power_usage_summary.xml -->
+    <com.android.settings.display.TimeoutListPreference
+        android:key="screen_timeout"
+        android:title="@string/screen_timeout"
+        android:summary="@string/summary_placeholder"
+        android:entries="@array/screen_timeout_entries"
+        android:entryValues="@array/screen_timeout_values"
+        settings:keywords="@string/keywords_screen_timeout" />
 
-    
+    <Preference
+        android:key="adaptive_sleep_entry"
+        android:title="@string/adaptive_sleep_title"
+        android:summary="@string/summary_placeholder"
+        android:fragment="com.android.settings.display.AdaptiveSleepSettings"
+        settings:controller="com.android.settings.display.AdaptiveSleepPreferenceController" />
 
-        <com.android.settings.TimeoutListPreference
-                android:key="screen_timeout"
-                android:title="@string/screen_timeout"
-                android:summary="@string/screen_timeout_summary"
-                android:entries="@array/screen_timeout_entries"
-                android:entryValues="@array/screen_timeout_values" />
+    <SwitchPreference
+        android:key="auto_rotate"
+        android:title="@string/accelerometer_title"
+        settings:keywords="@string/keywords_auto_rotate"
+        settings:controller="com.android.settings.display.AutoRotatePreferenceController" />
 
-        <!-- <SwitchPreference
-                android:key="camera_gesture"
-                android:title="@string/camera_gesture_title"
-                android:summary="@string/camera_gesture_desc" />
+    <Preference
+        android:key="color_mode"
+        android:title="@string/color_mode_title"
+        android:fragment="com.android.settings.display.ColorModePreferenceFragment"
+        settings:controller="com.android.settings.display.ColorModePreferenceController"
+        settings:keywords="@string/keywords_color_mode" />
 
-        <PreferenceScreen
-                android:key="screensaver"
-                android:title="@string/screensaver_settings_title"
-                android:fragment="com.android.settings.DreamSettings" />
+    <SwitchPreference
+        android:key="display_white_balance"
+        android:title="@string/display_white_balance_title"
+        android:summary="@string/display_white_balance_summary"
+        settings:controller="com.android.settings.display.DisplayWhiteBalancePreferenceController" />
 
-        <SwitchPreference
-                android:key="lift_to_wake"
-                android:title="@string/lift_to_wake_title" />
+    <SwitchPreference
+        android:key="peak_refresh_rate"
+        android:title="@string/peak_refresh_rate_title"
+        android:summary="@string/peak_refresh_rate_summary"
+        settings:controller="com.android.settings.display.PeakRefreshRatePreferenceController" />
 
-        <SwitchPreference
-                android:key="doze"
-                android:title="@string/doze_title"
-                android:summary="@string/doze_summary" />
+    <Preference
+        android:key="font_size"
+        android:title="@string/title_font_size"
+        android:fragment="com.android.settings.display.ToggleFontSizePreferenceFragment"
+        settings:controller="com.android.settings.display.FontSizePreferenceController" />
 
-        <cyanogenmod.preference.RemotePreference
-                android:key="doze_device_settings"
-                android:title="@string/doze_title"
-                android:summary="@string/doze_summary"
-                cm:replacesKey="doze">
-            <intent android:action="org.cyanogenmod.settings.device.DOZE_SETTINGS" />
-        </cyanogenmod.preference.RemotePreference>
+    <com.android.settings.display.ScreenZoomPreference
+        android:key="display_settings_screen_zoom"
+        android:title="@string/screen_zoom_title"
+        android:fragment="com.android.settings.display.ScreenZoomSettings"/>
 
-        <cyanogenmod.preference.CMGlobalSettingSwitchPreference
-                android:key="wake_when_plugged_or_unplugged"
-                android:title="@string/wake_when_plugged_or_unplugged_title"
-                android:summary="@string/wake_when_plugged_or_unplugged_summary"
-                android:defaultValue="@*android:bool/config_unplugTurnsOnScreen" />
+    <SwitchPreference
+        android:key="show_operator_name"
+        android:title="@string/show_operator_name_title"
+        android:summary="@string/show_operator_name_summary" />
 
-        <SwitchPreference
-                android:key="tap_to_wake"
-                android:title="@string/tap_to_wake"
-                android:summary="@string/tap_to_wake_summary" /> -->
+    <Preference
+        android:key="screensaver"
+        android:title="@string/screensaver_settings_title"
+        android:fragment="com.android.settings.dream.DreamSettings" />
 
-        <!-- Prevent accidental wake-up -->
-        <cyanogenmod.preference.CMSystemSettingSwitchPreference
-                android:key="proximity_on_wake"
-                android:title="@string/proximity_wake_title"
-                android:summary="@string/proximity_wake_summary"
-                cm:requiresConfig="@*cyanogenmod.platform:bool/config_proximityCheckOnWake" />
+    <Preference
+        android:key="lockscreen_from_display_settings"
+        android:title="@string/lockscreen_settings_title"
+        android:fragment="com.android.settings.security.LockscreenDashboardFragment"
+        settings:keywords="@string/keywords_ambient_display_screen"
+        settings:controller="com.android.settings.security.screenlock.LockScreenPreferenceController" />
 
-        <cyanogenmod.preference.CMSystemSettingSwitchPreference
-                android:key="high_touch_sensitivity_enable"
-                android:title="@string/high_touch_sensitivity_title"
-                android:summary="@string/high_touch_sensitivity_summary"
-                android:defaultValue="false"
-                cm:requiresFeature="cmhardware:FEATURE_HIGH_TOUCH_SENSITIVITY" />
+    <SwitchPreference
+        android:key="camera_gesture"
+        android:title="@string/camera_gesture_title"
+        android:summary="@string/camera_gesture_desc" />
 
-        <PreferenceScreen
-                android:key="font_size"
-                android:title="@string/title_font_size"
-                android:fragment="com.android.settings.accessibility.ToggleFontSizePreferenceFragment"
-                settings:keywords="@string/keywords_display_font_size" />
+    <SwitchPreference
+        android:key="lift_to_wake"
+        android:title="@string/lift_to_wake_title" />
 
-        <!-- <com.android.settings.display.ScreenZoomPreference
-                android:key="screen_zoom"
-                android:title="@string/screen_zoom_title"
-                settings:keywords="@string/screen_zoom_keywords" />
+    <SwitchPreference
+        android:key="tap_to_wake"
+        android:title="@string/tap_to_wake"
+        android:summary="@string/tap_to_wake_summary" />
 
-        <cyanogenmod.preference.CMSystemSettingSwitchPreference
-                android:key="systemui_burnin_protection"
-                android:title="@string/burnin_protection_title"
-                android:summary="@string/burnin_protection_summary"
-                android:defaultValue="false"
-                cm:requiresConfig="@*cyanogenmod.platform:bool/config_enableBurnInProtection"/> -->
+    <ListPreference
+        android:key="theme"
+        android:title="@string/device_theme"
+        android:summary="@string/summary_placeholder" />
 
-        <!-- Disable on CM
-        <DropDownPreference
-                android:key="auto_rotate"
-                android:summary="%s"
-                android:title="@string/display_auto_rotate_title" />
-        -->
-
-        <DropDownPreference
-                android:key="vr_display_pref"
-                android:summary="%s"
-                android:title="@string/display_vr_pref_title" />
-
-    </PreferenceCategory>
+    <Preference
+        android:key="vr_display_pref"
+        android:title="@string/display_vr_pref_title"
+        android:fragment="com.android.settings.display.VrDisplayPreferencePicker" />
 
 </PreferenceScreen>

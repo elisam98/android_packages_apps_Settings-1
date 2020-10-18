@@ -23,19 +23,16 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.util.EventLog;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
+import androidx.preference.Preference;
+
 import com.android.internal.app.AlertActivity;
 import com.android.internal.app.AlertController;
 import com.android.settings.R;
-import com.android.settingslib.bluetooth.CachedBluetoothDevice;
-import com.android.settingslib.bluetooth.CachedBluetoothDeviceManager;
-import com.android.settingslib.bluetooth.LocalBluetoothManager;
 
 /**
  * BluetoothPermissionActivity shows a dialog for accepting incoming
@@ -150,24 +147,13 @@ public class BluetoothPermissionActivity extends AlertActivity implements
         if(DEBUG) Log.i(TAG, "Back button pressed! ignoring");
         return;
     }
-    private String createRemoteName()
-    {
-        String mRemoteName = mDevice != null ? mDevice.getAliasName() : null;
-
-        if (mRemoteName == null) mRemoteName = getString(R.string.unknown);
-        String nameNoNewline = mRemoteName.replaceAll("[\\t\\n\\r]+", " ");
-        if (!mRemoteName.equals(nameNoNewline)) {
-            EventLog.writeEvent(0x534e4554, "72872376", -1, "");
-        }
-        return nameNoNewline;
-    }
 
     // TODO(edjee): createConnectionDialogView, createPhonebookDialogView and createMapDialogView
     // are similar. Refactor them into one method.
     // Also, the string resources bluetooth_remember_choice and bluetooth_pb_remember_choice should
     // be removed.
     private View createConnectionDialogView() {
-        String mRemoteName = createRemoteName();
+        String mRemoteName = Utils.createRemoteName(this, mDevice);
         mView = getLayoutInflater().inflate(R.layout.bluetooth_access, null);
         messageView = (TextView)mView.findViewById(R.id.message);
         messageView.setText(getString(R.string.bluetooth_connection_dialog_text,
@@ -176,7 +162,7 @@ public class BluetoothPermissionActivity extends AlertActivity implements
     }
 
     private View createPhonebookDialogView() {
-        String mRemoteName = createRemoteName();
+        String mRemoteName = Utils.createRemoteName(this, mDevice);
         mView = getLayoutInflater().inflate(R.layout.bluetooth_access, null);
         messageView = (TextView)mView.findViewById(R.id.message);
         messageView.setText(getString(R.string.bluetooth_pb_acceptance_dialog_text,
@@ -185,7 +171,7 @@ public class BluetoothPermissionActivity extends AlertActivity implements
     }
 
     private View createMapDialogView() {
-        String mRemoteName = createRemoteName();
+        String mRemoteName = Utils.createRemoteName(this, mDevice);
         mView = getLayoutInflater().inflate(R.layout.bluetooth_access, null);
         messageView = (TextView)mView.findViewById(R.id.message);
         messageView.setText(getString(R.string.bluetooth_map_acceptance_dialog_text,
@@ -194,7 +180,7 @@ public class BluetoothPermissionActivity extends AlertActivity implements
     }
 
     private View createSapDialogView() {
-        String mRemoteName = createRemoteName();
+        String mRemoteName = Utils.createRemoteName(this, mDevice);
         mView = getLayoutInflater().inflate(R.layout.bluetooth_access, null);
         messageView = (TextView)mView.findViewById(R.id.message);
         messageView.setText(getString(R.string.bluetooth_sap_acceptance_dialog_text,
@@ -210,22 +196,7 @@ public class BluetoothPermissionActivity extends AlertActivity implements
 
     private void onNegative() {
         if (DEBUG) Log.d(TAG, "onNegative");
-
-        boolean always = true;
-        if (mRequestType == BluetoothDevice.REQUEST_TYPE_MESSAGE_ACCESS) {
-            LocalBluetoothManager bluetoothManager = Utils.getLocalBtManager(this);
-            CachedBluetoothDeviceManager cachedDeviceManager =
-                    bluetoothManager.getCachedDeviceManager();
-            CachedBluetoothDevice cachedDevice = cachedDeviceManager.findDevice(mDevice);
-            if (cachedDevice == null) {
-                cachedDevice = cachedDeviceManager.addDevice(bluetoothManager.getBluetoothAdapter(),
-                                                             bluetoothManager.getProfileManager(),
-                                                             mDevice);
-            }
-            always = cachedDevice.checkAndIncreaseMessageRejectionCount();
-        }
-
-        sendReplyIntentToReceiver(false, always);
+        sendReplyIntentToReceiver(false, true);
     }
 
     private void sendReplyIntentToReceiver(final boolean allowed, final boolean always) {

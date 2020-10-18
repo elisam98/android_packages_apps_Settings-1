@@ -18,16 +18,11 @@ package com.android.settings.accounts;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
-import android.accounts.AccountManagerCallback;
-import android.accounts.AccountManagerFuture;
-import android.accounts.AuthenticatorException;
-import android.accounts.OperationCanceledException;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.settings.SettingsEnums;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SyncAdapterType;
@@ -40,157 +35,83 @@ import android.os.Binder;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
 import android.text.TextUtils;
-import android.telephony.SubscriptionManager;
-import android.telephony.TelephonyManager;
+import android.text.format.DateUtils;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.ImageView;
-import android.widget.TextView;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
+import androidx.preference.Preference;
+
+import com.android.settings.R;
+import com.android.settings.Utils;
+import com.android.settings.widget.EntityHeaderController;
+import com.android.settingslib.widget.FooterPreference;
 
 import com.google.android.collect.Lists;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.internal.telephony.OperatorSimInfo;
-import com.android.settings.R;
-import com.android.settings.Utils;
-import com.android.settingslib.RestrictedLockUtils;
-
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
-
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 public class AccountSyncSettings extends AccountPreferenceBase {
 
     public static final String ACCOUNT_KEY = "account";
-    private static final int MENU_SYNC_NOW_ID       = Menu.FIRST;
-    private static final int MENU_SYNC_CANCEL_ID    = Menu.FIRST + 1;
-    private static final int MENU_REMOVE_ACCOUNT_ID = Menu.FIRST + 2;
-    private static final int REALLY_REMOVE_DIALOG = 100;
-    private static final int FAILED_REMOVAL_DIALOG = 101;
+    private static final int MENU_SYNC_NOW_ID = Menu.FIRST;
+    private static final int MENU_SYNC_CANCEL_ID = Menu.FIRST + 1;
     private static final int CANT_DO_ONETIME_SYNC_DIALOG = 102;
+    private static final String UID_REQUEST_KEY = "uid_request_code";
 
-    private TextView mUserId;
-    private TextView mProviderId;
-    private ImageView mProviderIcon;
-    private TextView mErrorInfoView;
     private Account mAccount;
-    private ArrayList<SyncStateSwitchPreference> mSwitches =
-                new ArrayList<SyncStateSwitchPreference>();
     private ArrayList<SyncAdapterType> mInvisibleAdapters = Lists.newArrayList();
-
-    private final String SIM1_ACCOUNT_NAME = "SIM1";
-    private final String SIM2_ACCOUNT_NAME = "SIM2";
+    private HashMap<Integer, Integer> mUidRequestCodeMap = new HashMap<>();
 
     @Override
     public Dialog onCreateDialog(final int id) {
         Dialog dialog = null;
-        if (id == REALLY_REMOVE_DIALOG) {
+        if (id == CANT_DO_ONETIME_SYNC_DIALOG) {
             dialog = new AlertDialog.Builder(getActivity())
-                .setTitle(R.string.really_remove_account_title)
-                .setMessage(R.string.really_remove_account_message)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.remove_account_label,
-                        new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        Activity activity = getActivity();
-                        AccountManager.get(activity)
-                                .removeAccountAsUser(mAccount, activity,
-                                new AccountManagerCallback<Bundle>() {
-                            @Override
-                            public void run(AccountManagerFuture<Bundle> future) {
-                                // If already out of this screen, don't proceed.
-                                if (!AccountSyncSettings.this.isResumed()) {
-                                    return;
-                                }
-                                boolean failed = true;
-                                try {
-                                    if (future.getResult()
-                                            .getBoolean(AccountManager.KEY_BOOLEAN_RESULT)) {
-                                        failed = false;
-                                    }
-                                } catch (OperationCanceledException e) {
-                                    // handled below
-                                } catch (IOException e) {
-                                    // handled below
-                                } catch (AuthenticatorException e) {
-                                    // handled below
-                                }
-                                if (failed && getActivity() != null &&
-                                        !getActivity().isFinishing()) {
-                                    showDialog(FAILED_REMOVAL_DIALOG);
-                                } else {
-                                    finish();
-                                }
-                            }
-                        }, null, mUserHandle);
-                    }
-                })
-                .create();
-        } else if (id == FAILED_REMOVAL_DIALOG) {
-            dialog = new AlertDialog.Builder(getActivity())
-                .setTitle(R.string.really_remove_account_title)
-                .setPositiveButton(android.R.string.ok, null)
-                .setMessage(R.string.remove_account_failed)
-                .create();
-        } else if (id == CANT_DO_ONETIME_SYNC_DIALOG) {
-            dialog = new AlertDialog.Builder(getActivity())
-                .setTitle(R.string.cant_sync_dialog_title)
-                .setMessage(R.string.cant_sync_dialog_message)
-                .setPositiveButton(android.R.string.ok, null)
-                .create();
+                    .setTitle(R.string.cant_sync_dialog_title)
+                    .setMessage(R.string.cant_sync_dialog_message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .create();
         }
         return dialog;
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.ACCOUNTS_ACCOUNT_SYNC;
+    public int getMetricsCategory() {
+        return SettingsEnums.ACCOUNTS_ACCOUNT_SYNC;
+    }
+
+    @Override
+    public int getDialogMetricsCategory(int dialogId) {
+        switch (dialogId) {
+            case CANT_DO_ONETIME_SYNC_DIALOG:
+                return SettingsEnums.DIALOG_ACCOUNT_SYNC_CANNOT_ONETIME_SYNC;
+            default:
+                return 0;
+        }
     }
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
-        setPreferenceScreen(null);
         addPreferencesFromResource(R.xml.account_sync_settings);
         getPreferenceScreen().setOrderingAsAdded(false);
         setAccessibilityTitle();
-
-        setHasOptionsMenu(true);
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
-            Bundle savedInstanceState) {
-        final View view = inflater.inflate(R.layout.account_sync_screen, container, false);
-
-        final ViewGroup prefs_container = (ViewGroup) view.findViewById(R.id.prefs_container);
-        Utils.prepareCustomPreferencesList(container, view, prefs_container, false);
-        View prefs = super.onCreateView(inflater, prefs_container, savedInstanceState);
-        prefs_container.addView(prefs);
-
-        initializeUi(view);
-
-        return view;
-    }
-
-    protected void initializeUi(final View rootView) {
-        mErrorInfoView = (TextView) rootView.findViewById(R.id.sync_settings_error_info);
-        mErrorInfoView.setVisibility(View.GONE);
-
-        mUserId = (TextView) rootView.findViewById(R.id.user_id);
-        mProviderId = (TextView) rootView.findViewById(R.id.provider_id);
-        mProviderIcon = (ImageView) rootView.findViewById(R.id.provider_icon);
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (!mUidRequestCodeMap.isEmpty()) {
+            outState.putSerializable(UID_REQUEST_KEY, mUidRequestCodeMap);
+        }
     }
 
     @Override
@@ -203,17 +124,29 @@ public class AccountSyncSettings extends AccountPreferenceBase {
             finish();
             return;
         }
-        mAccount = (Account) arguments.getParcelable(ACCOUNT_KEY);
+        mAccount = arguments.getParcelable(ACCOUNT_KEY);
         if (!accountExists(mAccount)) {
             Log.e(TAG, "Account provided does not exist: " + mAccount);
             finish();
             return;
         }
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
-          Log.v(TAG, "Got account: " + mAccount);
+            Log.v(TAG, "Got account: " + mAccount);
         }
-        mUserId.setText(mAccount.name);
-        mProviderId.setText(mAccount.type);
+        final Activity activity = getActivity();
+        final Preference pref = EntityHeaderController
+                .newInstance(activity, this, null /* header */)
+                .setRecyclerView(getListView(), getSettingsLifecycle())
+                .setIcon(getDrawableForType(mAccount.type))
+                .setLabel(mAccount.name)
+                .setSummary(getLabelForType(mAccount.type))
+                .done(activity, getPrefContext());
+        pref.setOrder(0);
+        getPreferenceScreen().addPreference(pref);
+        if (savedInstanceState != null && savedInstanceState.containsKey(UID_REQUEST_KEY)) {
+            mUidRequestCodeMap = (HashMap<Integer, Integer>) savedInstanceState.getSerializable(
+                    UID_REQUEST_KEY);
+        }
     }
 
     private void setAccessibilityTitle() {
@@ -230,7 +163,6 @@ public class AccountSyncSettings extends AccountPreferenceBase {
 
     @Override
     public void onResume() {
-        removePreference("dummy");
         mAuthenticatorHelper.listenToAccountUpdates();
         updateAuthDescriptions();
         onAccountsUpdate(Binder.getCallingUserHandle());
@@ -253,51 +185,28 @@ public class AccountSyncSettings extends AccountPreferenceBase {
         } else {
             item.setup(account, authority, packageName, uid);
         }
+        final PackageManager packageManager = getPackageManager();
         item.setPersistent(false);
-        final ProviderInfo providerInfo = getPackageManager().resolveContentProviderAsUser(
+        final ProviderInfo providerInfo = packageManager.resolveContentProviderAsUser(
                 authority, 0, mUserHandle.getIdentifier());
         if (providerInfo == null) {
             return;
         }
-        CharSequence providerLabel = providerInfo.loadLabel(getPackageManager());
+        final CharSequence providerLabel = providerInfo.loadLabel(packageManager);
         if (TextUtils.isEmpty(providerLabel)) {
             Log.e(TAG, "Provider needs a label for authority '" + authority + "'");
             return;
         }
-        String title = getString(R.string.sync_item_title, providerLabel);
-        item.setTitle(title);
+        item.setTitle(providerLabel);
         item.setKey(authority);
     }
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-
         MenuItem syncNow = menu.add(0, MENU_SYNC_NOW_ID, 0,
-                getString(R.string.sync_menu_sync_now))
-                .setIcon(R.drawable.ic_menu_refresh_holo_dark);
+                getString(R.string.sync_menu_sync_now));
         MenuItem syncCancel = menu.add(0, MENU_SYNC_CANCEL_ID, 0,
-                getString(R.string.sync_menu_sync_cancel))
-                .setIcon(com.android.internal.R.drawable.ic_menu_close_clear_cancel);
-
-        MenuItem removeAccount = menu.add(0, MENU_REMOVE_ACCOUNT_ID, 0,
-                getString(R.string.remove_account_label))
-                .setIcon(R.drawable.ic_menu_delete);
-        removeAccount.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER |
-                MenuItem.SHOW_AS_ACTION_WITH_TEXT);
-        if (RestrictedLockUtils.hasBaseUserRestriction(getPrefContext(),
-                UserManager.DISALLOW_MODIFY_ACCOUNTS, mUserHandle.getIdentifier())) {
-            removeAccount.setEnabled(false);
-        } else {
-            EnforcedAdmin admin = RestrictedLockUtils.checkIfRestrictionEnforced(
-                    getPrefContext(), UserManager.DISALLOW_MODIFY_ACCOUNTS,
-                    mUserHandle.getIdentifier());
-            if (admin == null) {
-                admin = RestrictedLockUtils.checkIfAccountManagementDisabled(
-                        getPrefContext(), mAccount.type, mUserHandle.getIdentifier());
-            }
-            RestrictedLockUtils.setMenuItemAsDisabledByAdmin(getPrefContext(),
-                    removeAccount, admin);
-        }
+                getString(R.string.sync_menu_sync_cancel));
 
         syncNow.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER |
                 MenuItem.SHOW_AS_ACTION_WITH_TEXT);
@@ -313,7 +222,7 @@ public class AccountSyncSettings extends AccountPreferenceBase {
         // Note that this also counts accounts that are not currently displayed
         boolean syncActive = !ContentResolver.getCurrentSyncsAsUser(
                 mUserHandle.getIdentifier()).isEmpty();
-        menu.findItem(MENU_SYNC_NOW_ID).setVisible(!syncActive);
+        menu.findItem(MENU_SYNC_NOW_ID).setVisible(!syncActive).setEnabled(enabledSyncNowMenu());
         menu.findItem(MENU_SYNC_CANCEL_ID).setVisible(syncActive);
     }
 
@@ -326,9 +235,6 @@ public class AccountSyncSettings extends AccountPreferenceBase {
             case MENU_SYNC_CANCEL_ID:
                 cancelSyncForEnabledProviders();
                 return true;
-            case MENU_REMOVE_ACCOUNT_ID:
-                showDialog(REALLY_REMOVE_DIALOG);
-                return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -336,13 +242,12 @@ public class AccountSyncSettings extends AccountPreferenceBase {
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (resultCode == Activity.RESULT_OK) {
-            final int uid = requestCode;
             final int count = getPreferenceScreen().getPreferenceCount();
             for (int i = 0; i < count; i++) {
                 Preference preference = getPreferenceScreen().getPreference(i);
                 if (preference instanceof SyncStateSwitchPreference) {
                     SyncStateSwitchPreference syncPref = (SyncStateSwitchPreference) preference;
-                    if (syncPref.getUid() == uid) {
+                    if (getRequestCodeByUid(syncPref.getUid()) == requestCode) {
                         onPreferenceTreeClick(syncPref);
                         return;
                     }
@@ -358,10 +263,13 @@ public class AccountSyncSettings extends AccountPreferenceBase {
         }
         if (preference instanceof SyncStateSwitchPreference) {
             SyncStateSwitchPreference syncPref = (SyncStateSwitchPreference) preference;
-            String authority = syncPref.getAuthority();
-            Account account = syncPref.getAccount();
+            final String authority = syncPref.getAuthority();
+            if (TextUtils.isEmpty(authority)) {
+                return false;
+            }
+            final Account account = syncPref.getAccount();
             final int userId = mUserHandle.getIdentifier();
-            String packageName = syncPref.getPackageName();
+            final String packageName = syncPref.getPackageName();
 
             boolean syncAutomatically = ContentResolver.getSyncAutomaticallyAsUser(account,
                     authority, userId);
@@ -420,7 +328,9 @@ public class AccountSyncSettings extends AccountPreferenceBase {
                     mAccount, packageName, mUserHandle);
             if (intent != null) {
                 try {
-                    startIntentSenderForResult(intent, uid, null, 0, 0, 0, null);
+                    final int requestCode = addUidAndGenerateRequestCode(uid);
+                    startIntentSenderForResult(intent, requestCode, null /* fillInIntent */, 0, 0,
+                            0, null /* options */);
                     return true;
                 } catch (IntentSender.SendIntentException e) {
                     Log.e(TAG, "Error requesting account access", e);
@@ -451,7 +361,7 @@ public class AccountSyncSettings extends AccountPreferenceBase {
         int count = getPreferenceScreen().getPreferenceCount();
         for (int i = 0; i < count; i++) {
             Preference pref = getPreferenceScreen().getPreference(i);
-            if (! (pref instanceof SyncStateSwitchPreference)) {
+            if (!(pref instanceof SyncStateSwitchPreference)) {
                 continue;
             }
             SyncStateSwitchPreference syncPref = (SyncStateSwitchPreference) pref;
@@ -463,7 +373,7 @@ public class AccountSyncSettings extends AccountPreferenceBase {
         // plus whatever the system needs to sync, e.g., invisible sync adapters
         if (mAccount != null) {
             for (SyncAdapterType syncAdapter : mInvisibleAdapters) {
-                  requestOrCancelSync(mAccount, syncAdapter.authority, startSync);
+                requestOrCancelSync(mAccount, syncAdapter.authority, startSync);
             }
         }
     }
@@ -510,7 +420,7 @@ public class AccountSyncSettings extends AccountPreferenceBase {
 
         for (int i = 0, count = getPreferenceScreen().getPreferenceCount(); i < count; i++) {
             Preference pref = getPreferenceScreen().getPreference(i);
-            if (! (pref instanceof SyncStateSwitchPreference)) {
+            if (!(pref instanceof SyncStateSwitchPreference)) {
                 continue;
             }
             SyncStateSwitchPreference syncPref = (SyncStateSwitchPreference) pref;
@@ -528,14 +438,14 @@ public class AccountSyncSettings extends AccountPreferenceBase {
             boolean lastSyncFailed = status != null
                     && status.lastFailureTime != 0
                     && status.getLastFailureMesgAsInt(0)
-                       != ContentResolver.SYNC_ERROR_SYNC_ALREADY_IN_PROGRESS;
+                    != ContentResolver.SYNC_ERROR_SYNC_ALREADY_IN_PROGRESS;
             if (!syncEnabled) lastSyncFailed = false;
             if (lastSyncFailed && !activelySyncing && !authorityIsPending) {
                 syncIsFailing = true;
             }
-            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+            if (Log.isLoggable(TAG, Log.DEBUG)) {
                 Log.d(TAG, "Update sync status: " + account + " " + authority +
-                        " active = " + activelySyncing + " pend =" +  authorityIsPending);
+                        " active = " + activelySyncing + " pend =" + authorityIsPending);
             }
 
             final long successEndTime = (status == null) ? 0 : status.lastSuccessTime;
@@ -545,7 +455,7 @@ public class AccountSyncSettings extends AccountPreferenceBase {
                 syncPref.setSummary(R.string.sync_in_progress);
             } else if (successEndTime != 0) {
                 date.setTime(successEndTime);
-                final String timeString = formatSyncDate(date);
+                final String timeString = formatSyncDate(getContext(), date);
                 syncPref.setSummary(getResources().getString(R.string.last_synced, timeString));
             } else {
                 syncPref.setSummary("");
@@ -559,11 +469,14 @@ public class AccountSyncSettings extends AccountPreferenceBase {
 
             syncPref.setFailed(lastSyncFailed);
             final boolean oneTimeSyncMode = !ContentResolver.getMasterSyncAutomaticallyAsUser(
-                userId);
+                    userId);
             syncPref.setOneTimeSyncMode(oneTimeSyncMode);
             syncPref.setChecked(oneTimeSyncMode || syncEnabled);
         }
-        mErrorInfoView.setVisibility(syncIsFailing ? View.VISIBLE : View.GONE);
+        if (syncIsFailing) {
+            getPreferenceScreen().addPreference(new FooterPreference.Builder(
+                    getActivity()).setTitle(R.string.sync_is_failing).build());
+        }
     }
 
     @Override
@@ -603,7 +516,7 @@ public class AccountSyncSettings extends AccountPreferenceBase {
             // Only keep track of sync adapters for this account
             if (!sa.accountType.equals(mAccount.type)) continue;
             if (sa.isUserVisible()) {
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                if (Log.isLoggable(TAG, Log.DEBUG)) {
                     Log.d(TAG, "updateAccountSwitches: added authority " + sa.authority
                             + " to accountType " + sa.accountType);
                 }
@@ -615,16 +528,18 @@ public class AccountSyncSettings extends AccountPreferenceBase {
             }
         }
 
-        if (Log.isLoggable(TAG, Log.VERBOSE)) {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "looking for sync adapters that match account " + mAccount);
         }
+
         cacheRemoveAllPrefs(getPreferenceScreen());
+        getCachedPreference(EntityHeaderController.PREF_KEY_APP_HEADER);
         for (int j = 0, m = authorities.size(); j < m; j++) {
             final SyncAdapterType syncAdapter = authorities.get(j);
             // We could check services here....
             int syncState = ContentResolver.getIsSyncableAsUser(mAccount, syncAdapter.authority,
                     mUserHandle.getIdentifier());
-            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+            if (Log.isLoggable(TAG, Log.DEBUG)) {
                 Log.d(TAG, "  found authority " + syncAdapter.authority + " " + syncState);
             }
             if (syncState > 0) {
@@ -642,48 +557,48 @@ public class AccountSyncSettings extends AccountPreferenceBase {
         removeCachedPrefs(getPreferenceScreen());
     }
 
-    /**
-     * Updates the titlebar with an icon for the provider type.
-     */
     @Override
-    protected void onAuthDescriptionsUpdated() {
-        super.onAuthDescriptionsUpdated();
-        if (mAccount != null) {
-            mProviderIcon.setImageDrawable(getDrawableForType(mAccount.type));
-            mProviderId.setText(getLabelForType(mAccount.type));
-            //Sim Icon Customisation feature change
-            OperatorSimInfo operatorSimInfo = new OperatorSimInfo(getActivity().
-                    getApplicationContext());
-            boolean isCustomSimFeatureEnabled = operatorSimInfo.
-                    isOperatorFeatureEnabled();
-            if (isCustomSimFeatureEnabled) {
-                String accountName = mAccount.name;
-                if (accountName.equalsIgnoreCase(SIM1_ACCOUNT_NAME)) {
-                    showOperatorSimIcon(0, operatorSimInfo);
-                } else if (accountName.equalsIgnoreCase(SIM2_ACCOUNT_NAME)) {
-                    showOperatorSimIcon(1, operatorSimInfo);
-                }
-            }
-
-        }
-    }
-
-    @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_url_accounts;
     }
 
-    private void showOperatorSimIcon(int slotIndex, OperatorSimInfo operatorSimInfo) {
-       boolean isSimTypeOperator = operatorSimInfo.isSimTypeOperator(slotIndex);
-       if (isSimTypeOperator) {
-           mProviderIcon.setImageDrawable(operatorSimInfo.getOperatorDrawable());
-           mUserId.setText(operatorSimInfo.getOperatorDisplayName());
-       } else {
-           mProviderIcon.setImageDrawable(operatorSimInfo.getGenericSimDrawable());
-           int subId = SubscriptionManager.getSubId(slotIndex)[0];
-           String operatorName = TelephonyManager.from(getActivity().
-                   getApplicationContext()).getSimOperator(subId);
-           mUserId.setText(operatorName);
-       }
-   }
+    @VisibleForTesting
+    boolean enabledSyncNowMenu() {
+        boolean enabled = false;
+        for (int i = 0, count = getPreferenceScreen().getPreferenceCount(); i < count; i++) {
+            final Preference pref = getPreferenceScreen().getPreference(i);
+            if (!(pref instanceof SyncStateSwitchPreference)) {
+                continue;
+            }
+            final SyncStateSwitchPreference syncPref = (SyncStateSwitchPreference) pref;
+            if (syncPref.isChecked()) {
+                enabled = true;
+                break;
+            }
+        }
+        return enabled;
+    }
+
+    private static String formatSyncDate(Context context, Date date) {
+        return DateUtils.formatDateTime(context, date.getTime(),
+                DateUtils.FORMAT_SHOW_DATE
+                        | DateUtils.FORMAT_SHOW_YEAR
+                        | DateUtils.FORMAT_SHOW_TIME);
+    }
+
+    private int addUidAndGenerateRequestCode(int uid) {
+        if (mUidRequestCodeMap.containsKey(uid)) {
+            return mUidRequestCodeMap.get(uid);
+        }
+        final int requestCode = mUidRequestCodeMap.size() + 1;
+        mUidRequestCodeMap.put(uid, requestCode);
+        return requestCode;
+    }
+
+    private int getRequestCodeByUid(int uid) {
+        if (!mUidRequestCodeMap.containsKey(uid)) {
+            return -1;
+        }
+        return mUidRequestCodeMap.get(uid);
+    }
 }

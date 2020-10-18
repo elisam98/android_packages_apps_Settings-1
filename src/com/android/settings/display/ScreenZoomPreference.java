@@ -16,27 +16,24 @@
 
 package com.android.settings.display;
 
-import com.android.settingslib.display.DisplayDensityUtils;
-
 import android.content.Context;
-import android.support.v4.content.res.TypedArrayUtils;
-import android.support.v7.preference.PreferenceGroup;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+
+import androidx.core.content.res.TypedArrayUtils;
+import androidx.preference.Preference;
+
+import com.android.settingslib.display.DisplayDensityUtils;
 
 /**
  * Preference for changing the density of the display on which the preference
  * is visible.
  */
-public class ScreenZoomPreference extends PreferenceGroup {
+public class ScreenZoomPreference extends Preference {
     public ScreenZoomPreference(Context context, AttributeSet attrs) {
         super(context, attrs, TypedArrayUtils.getAttr(context,
-                android.support.v7.preference.R.attr.preferenceScreenStyle,
-                android.R.attr.preferenceScreenStyle));
-
-        if (TextUtils.isEmpty(getFragment())) {
-            setFragment("com.android.settings.display.ScreenZoomSettings");
-        }
+                androidx.preference.R.attr.preferenceStyle,
+                android.R.attr.preferenceStyle));
 
         final DisplayDensityUtils density = new DisplayDensityUtils(context);
         final int defaultIndex = density.getCurrentIndex();
@@ -48,10 +45,5 @@ public class ScreenZoomPreference extends PreferenceGroup {
             final int currentIndex = density.getCurrentIndex();
             setSummary(entries[currentIndex]);
         }
-    }
-
-    @Override
-    protected boolean isOnSameScreenAsChildren() {
-        return false;
     }
 }

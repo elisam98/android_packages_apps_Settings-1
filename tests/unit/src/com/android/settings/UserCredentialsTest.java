@@ -16,18 +16,19 @@
 
 package com.android.settings;
 
+import static com.android.settings.UserCredentialsSettings.Credential;
+
 import android.os.Parcel;
+import android.os.Process;
 import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.SmallTest;
-
-import static com.android.settings.UserCredentialsSettings.Credential;
 
 /**
  * User credentials settings fragment tests
  *
  * To run the test, use command:
  * adb shell am instrument -e class com.android.settings.UserCredentialsTest
- * -w com.android.settings.tests.unit/android.support.test.runner.AndroidJUnitRunner
+ * -w com.android.settings.tests.unit/androidx.test.runner.AndroidJUnitRunner
  *
  */
 public class UserCredentialsTest extends InstrumentationTestCase {
@@ -36,10 +37,10 @@ public class UserCredentialsTest extends InstrumentationTestCase {
     @SmallTest
     public void testCredentialIsParcelable() {
         final String alias = "credential-test-alias";
-        Credential c = new Credential(alias);
+        Credential c = new Credential(alias, Process.SYSTEM_UID);
 
         c.storedTypes.add(Credential.Type.CA_CERTIFICATE);
-        c.storedTypes.add(Credential.Type.USER_SECRET_KEY);
+        c.storedTypes.add(Credential.Type.USER_KEY);
 
         Parcel p = Parcel.obtain();
         c.writeToParcel(p, /* flags */ 0);
@@ -47,6 +48,7 @@ public class UserCredentialsTest extends InstrumentationTestCase {
 
         Credential r = Credential.CREATOR.createFromParcel(p);
         assertEquals(c.alias, r.alias);
+        assertEquals(c.uid, r.uid);
         assertEquals(c.storedTypes, r.storedTypes);
     }
 }

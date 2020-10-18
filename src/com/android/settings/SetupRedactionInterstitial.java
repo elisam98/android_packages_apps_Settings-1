@@ -16,13 +16,15 @@
 
 package com.android.settings;
 
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
-import android.content.res.Resources;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.view.View;
-import android.widget.Button;
 
 import com.android.settings.notification.RedactionInterstitial;
+
+import com.google.android.setupcompat.util.WizardManagerHelper;
 
 /**
  * Setup Wizard's version of RedactionInterstitial screen. It inherits the logic and basic structure
@@ -32,6 +34,29 @@ import com.android.settings.notification.RedactionInterstitial;
  * inherit those changes.
  */
 public class SetupRedactionInterstitial extends RedactionInterstitial {
+
+    /**
+     * Set the enabled state of SetupRedactionInterstitial activity to configure whether it is shown
+     * as part of setup wizard's optional steps.
+     */
+    public static void setEnabled(Context context, boolean enabled) {
+        PackageManager packageManager = context.getPackageManager();
+        ComponentName componentName = new ComponentName(context, SetupRedactionInterstitial.class);
+        packageManager.setComponentEnabledSetting(
+                componentName,
+                enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP);
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstance) {
+        // Only allow to start the activity from Setup Wizard.
+        if (!WizardManagerHelper.isAnySetupWizard(getIntent())) {
+            finish();
+        }
+        super.onCreate(savedInstance);
+    }
 
     @Override
     public Intent getIntent() {
@@ -44,12 +69,6 @@ public class SetupRedactionInterstitial extends RedactionInterstitial {
     @Override
     protected boolean isValidFragment(String fragmentName) {
         return SetupRedactionInterstitialFragment.class.getName().equals(fragmentName);
-    }
-
-    @Override
-    protected void onApplyThemeResource(Resources.Theme theme, int resid, boolean first) {
-        resid = SetupWizardUtils.getTheme(getIntent());
-        super.onApplyThemeResource(theme, resid, first);
     }
 
     public static class SetupRedactionInterstitialFragment extends RedactionInterstitialFragment {

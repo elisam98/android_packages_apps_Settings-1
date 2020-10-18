@@ -17,8 +17,8 @@
 package com.android.settings.wifi.p2p;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.settings.SettingsEnums;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -34,77 +34,83 @@ import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.WifiP2pManager.DeviceInfoListener;
 import android.net.wifi.p2p.WifiP2pManager.PeerListListener;
 import android.net.wifi.p2p.WifiP2pManager.PersistentGroupInfoListener;
 import android.os.Bundle;
-import android.os.SystemProperties;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceCategory;
-import android.support.v7.preference.PreferenceGroup;
-import android.support.v7.preference.PreferenceScreen;
+import android.sysprop.TelephonyProperties;
 import android.text.InputFilter;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.settings.R;
-import com.android.settings.SettingsPreferenceFragment;
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 
-import java.io.UnsupportedEncodingException;
-import java.nio.ByteBuffer;
+import com.android.settings.R;
+import com.android.settings.dashboard.DashboardFragment;
+import com.android.settingslib.core.AbstractPreferenceController;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /*
  * Displays Wi-fi p2p settings UI
  */
-public class WifiP2pSettings extends SettingsPreferenceFragment
-        implements PersistentGroupInfoListener, PeerListListener {
+public class WifiP2pSettings extends DashboardFragment
+        implements PersistentGroupInfoListener, PeerListListener, DeviceInfoListener {
 
     private static final String TAG = "WifiP2pSettings";
     private static final boolean DBG = false;
-    private static final int MENU_ID_SEARCH = Menu.FIRST;
-    private static final int MENU_ID_RENAME = Menu.FIRST + 1;
+    @VisibleForTesting static final int MENU_ID_SEARCH = Menu.FIRST;
+    @VisibleForTesting static final int MENU_ID_RENAME = Menu.FIRST + 1;
 
     private final IntentFilter mIntentFilter = new IntentFilter();
-    private WifiP2pManager mWifiP2pManager;
+    @VisibleForTesting WifiP2pManager mWifiP2pManager;
     private WifiP2pManager.Channel mChannel;
-    private OnClickListener mRenameListener;
-    private OnClickListener mDisconnectListener;
-    private OnClickListener mCancelConnectListener;
-    private OnClickListener mDeleteGroupListener;
-    private WifiP2pPeer mSelectedWifiPeer;
-    private WifiP2pPersistentGroup mSelectedGroup;
-    private String mSelectedGroupName;
+    @VisibleForTesting OnClickListener mRenameListener;
+    @VisibleForTesting OnClickListener mDisconnectListener;
+    @VisibleForTesting OnClickListener mCancelConnectListener;
+    @VisibleForTesting OnClickListener mDeleteGroupListener;
+    @VisibleForTesting WifiP2pPeer mSelectedWifiPeer;
+    @VisibleForTesting WifiP2pPersistentGroup mSelectedGroup;
+    @VisibleForTesting String mSelectedGroupName;
     private EditText mDeviceNameText;
 
     private boolean mWifiP2pEnabled;
-    private boolean mWifiP2pSearching;
-    private int mConnectedDevices;
-    private boolean mLastGroupFormed = false;
+    @VisibleForTesting boolean mWifiP2pSearching;
+    @VisibleForTesting int mConnectedDevices;
+    @VisibleForTesting boolean mLastGroupFormed = false;
+    private boolean mIsIgnoreInitConnectionInfoCallback = false;
 
-    private PreferenceGroup mPeersGroup;
-    private PreferenceGroup mPersistentGroup;
-    private Preference mThisDevicePref;
+    @VisibleForTesting P2pPeerCategoryPreferenceController mPeerCategoryController;
+    @VisibleForTesting P2pPersistentCategoryPreferenceController mPersistentCategoryController;
+    @VisibleForTesting P2pThisDevicePreferenceController mThisDevicePreferenceController;
 
-    private static final int DIALOG_DISCONNECT  = 1;
-    private static final int DIALOG_CANCEL_CONNECT = 2;
-    private static final int DIALOG_RENAME = 3;
-    private static final int DIALOG_DELETE_GROUP = 4;
+    @VisibleForTesting static final int DIALOG_DISCONNECT  = 1;
+    @VisibleForTesting static final int DIALOG_CANCEL_CONNECT = 2;
+    @VisibleForTesting static final int DIALOG_RENAME = 3;
+    @VisibleForTesting static final int DIALOG_DELETE_GROUP = 4;
 
-    private static final String SAVE_DIALOG_PEER = "PEER_STATE";
-    private static final String SAVE_DEVICE_NAME = "DEV_NAME";
-    private static final String SAVE_SELECTED_GROUP = "GROUP_NAME";
+    @VisibleForTesting static final String SAVE_DIALOG_PEER = "PEER_STATE";
+    @VisibleForTesting static final String SAVE_DEVICE_NAME = "DEV_NAME";
+    @VisibleForTesting static final String SAVE_SELECTED_GROUP = "GROUP_NAME";
 
     private WifiP2pDevice mThisDevice;
     private WifiP2pDeviceList mPeers = new WifiP2pDeviceList();
 
-    private String mSavedDeviceName;
+    @VisibleForTesting String mSavedDeviceName;
 
-    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+    @VisibleForTesting
+    final BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -131,11 +137,14 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
                     startSearch();
                 }
                 mLastGroupFormed = wifip2pinfo.groupFormed;
+                mIsIgnoreInitConnectionInfoCallback = true;
             } else if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {
-                mThisDevice = (WifiP2pDevice) intent.getParcelableExtra(
-                        WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
-                if (DBG) Log.d(TAG, "Update device info: " + mThisDevice);
-                updateDevicePref();
+                // Do not use WifiP2pManager.EXTRA_WIFI_P2P_DEVICE from the extras, as the system
+                // broadcast does not contain the device's MAC.
+                // Requesting our own device info as an app holding the NETWORK_SETTINGS permission
+                // ensures that the MAC address will be available in the result.
+                if (DBG) Log.d(TAG, "This device changed. Requesting device info.");
+                mWifiP2pManager.requestDeviceInfo(mChannel, WifiP2pSettings.this);
             } else if (WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION.equals(action)) {
                 int discoveryState = intent.getIntExtra(WifiP2pManager.EXTRA_DISCOVERY_STATE,
                     WifiP2pManager.WIFI_P2P_DISCOVERY_STOPPED);
@@ -145,7 +154,7 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
                 } else {
                     updateSearchMenu(false);
                 }
-            } else if (WifiP2pManager.WIFI_P2P_PERSISTENT_GROUPS_CHANGED_ACTION.equals(action)) {
+            } else if (WifiP2pManager.ACTION_WIFI_P2P_PERSISTENT_GROUPS_CHANGED.equals(action)) {
                 if (mWifiP2pManager != null) {
                     mWifiP2pManager.requestPersistentGroupInfo(mChannel, WifiP2pSettings.this);
                 }
@@ -153,25 +162,50 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
         }
     };
 
-    public WifiP2pSettings() {
-        if (DBG) Log.d(TAG, "Creating WifiP2pSettings ...");
+    @Override
+    protected String getLogTag() {
+        return TAG;
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.wifi_p2p_settings;
+    }
+
+    @Override
+    public int getMetricsCategory() {
+        return SettingsEnums.WIFI_P2P;
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_url_wifi_p2p;
+    }
+
+    @Override
+    protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
+        final List<AbstractPreferenceController> controllers = new ArrayList<>();
+        mPersistentCategoryController =
+                new P2pPersistentCategoryPreferenceController(context);
+        mPeerCategoryController =
+                new P2pPeerCategoryPreferenceController(context);
+        mThisDevicePreferenceController = new P2pThisDevicePreferenceController(context);
+        controllers.add(mPersistentCategoryController);
+        controllers.add(mPeerCategoryController);
+        controllers.add(mThisDevicePreferenceController);
+        return controllers;
     }
 
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
-        addPreferencesFromResource(R.xml.wifi_p2p_settings);
-
-        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
-        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
-        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
-        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION);
-        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PERSISTENT_GROUPS_CHANGED_ACTION);
-
         final Activity activity = getActivity();
-        mWifiP2pManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
+        if (mWifiP2pManager == null) {
+            mWifiP2pManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
+        }
+
         if (mWifiP2pManager != null) {
-            mChannel = mWifiP2pManager.initialize(activity, getActivity().getMainLooper(), null);
+            mChannel = mWifiP2pManager.initialize(activity.getApplicationContext(),
+                    getActivity().getMainLooper(), null);
             if (mChannel == null) {
                 //Failure to set up connection
                 Log.e(TAG, "Failed to set up connection with wifi p2p service");
@@ -183,7 +217,7 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
 
         if (savedInstanceState != null && savedInstanceState.containsKey(SAVE_DIALOG_PEER)) {
             WifiP2pDevice device = savedInstanceState.getParcelable(SAVE_DIALOG_PEER);
-            mSelectedWifiPeer = new WifiP2pPeer(getActivity(), device);
+            mSelectedWifiPeer = new WifiP2pPeer(getPrefContext(), device);
         }
         if (savedInstanceState != null && savedInstanceState.containsKey(SAVE_DEVICE_NAME)) {
             mSavedDeviceName = savedInstanceState.getString(SAVE_DEVICE_NAME);
@@ -277,16 +311,17 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
                             mWifiP2pManager.deletePersistentGroup(mChannel,
                                     mSelectedGroup.getNetworkId(),
                                     new WifiP2pManager.ActionListener() {
-                                public void onSuccess() {
-                                    if (DBG) Log.d(TAG, " delete group success");
-                                }
-                                public void onFailure(int reason) {
-                                    if (DBG) Log.d(TAG, " delete group fail " + reason);
-                                }
-                            });
+                                        public void onSuccess() {
+                                            if (DBG) Log.d(TAG, " delete group success");
+                                        }
+
+                                        public void onFailure(int reason) {
+                                            if (DBG) Log.d(TAG, " delete group fail " + reason);
+                                        }
+                                    });
                             mSelectedGroup = null;
                         } else {
-                            if (DBG) Log.w(TAG, " No selected group to delete!" );
+                            if (DBG) Log.w(TAG, " No selected group to delete!");
                         }
                     }
                 } else if (which == DialogInterface.BUTTON_NEGATIVE) {
@@ -298,34 +333,40 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
             }
         };
 
-        setHasOptionsMenu(true);
-
-        final PreferenceScreen preferenceScreen = getPreferenceScreen();
-        preferenceScreen.removeAll();
-        preferenceScreen.setOrderingAsAdded(true);
-
-        mThisDevicePref = new Preference(getPrefContext());
-        mThisDevicePref.setPersistent(false);
-        mThisDevicePref.setSelectable(false);
-        preferenceScreen.addPreference(mThisDevicePref);
-
-        mPeersGroup = new PreferenceCategory(getPrefContext());
-        mPeersGroup.setTitle(R.string.wifi_p2p_peer_devices);
-        preferenceScreen.addPreference(mPeersGroup);
-
-        mPersistentGroup = new PreferenceCategory(getPrefContext());
-        mPersistentGroup.setTitle(R.string.wifi_p2p_remembered_groups);
-        preferenceScreen.addPreference(mPersistentGroup);
-
         super.onActivityCreated(savedInstanceState);
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
+        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
+        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
+        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
+        mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION);
+        mIntentFilter.addAction(WifiP2pManager.ACTION_WIFI_P2P_PERSISTENT_GROUPS_CHANGED);
+        final PreferenceScreen preferenceScreen = getPreferenceScreen();
+
         getActivity().registerReceiver(mReceiver, mIntentFilter);
         if (mWifiP2pManager != null) {
             mWifiP2pManager.requestPeers(mChannel, WifiP2pSettings.this);
+            mWifiP2pManager.requestDeviceInfo(mChannel, WifiP2pSettings.this);
+            mIsIgnoreInitConnectionInfoCallback = false;
+            mWifiP2pManager.requestNetworkInfo(mChannel, networkInfo -> {
+                mWifiP2pManager.requestConnectionInfo(mChannel, wifip2pinfo -> {
+                    if (!mIsIgnoreInitConnectionInfoCallback) {
+                        if (networkInfo.isConnected()) {
+                            if (DBG) {
+                                Log.d(TAG, "Connected");
+                            }
+                        } else if (!mLastGroupFormed) {
+                            // Find peers when p2p doesn't connected.
+                            startSearch();
+                        }
+                        mLastGroupFormed = wifip2pinfo.groupFormed;
+                    }
+                });
+            });
         }
     }
 
@@ -343,11 +384,9 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
         int textId = mWifiP2pSearching ? R.string.wifi_p2p_menu_searching :
                 R.string.wifi_p2p_menu_search;
         menu.add(Menu.NONE, MENU_ID_SEARCH, 0, textId)
-            .setEnabled(mWifiP2pEnabled)
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+            .setEnabled(mWifiP2pEnabled);
         menu.add(Menu.NONE, MENU_ID_RENAME, 0, R.string.wifi_p2p_menu_rename)
-            .setEnabled(mWifiP2pEnabled)
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+            .setEnabled(mWifiP2pEnabled);
         super.onCreateOptionsMenu(menu, inflater);
     }
 
@@ -395,7 +434,7 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
                 WifiP2pConfig config = new WifiP2pConfig();
                 config.deviceAddress = mSelectedWifiPeer.device.deviceAddress;
 
-                int forceWps = SystemProperties.getInt("wifidirect.wps", -1);
+                int forceWps = TelephonyProperties.wps_info().orElse(-1);
 
                 if (forceWps != -1) {
                     config.wps.setup = forceWps;
@@ -463,7 +502,9 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
                 .create();
             return dialog;
         } else if (id == DIALOG_RENAME) {
-            mDeviceNameText = new EditText(getActivity());
+            final LayoutInflater layoutInflater = LayoutInflater.from(getPrefContext());
+            final View root = layoutInflater.inflate(R.layout.dialog_edittext, null /* root */);
+            mDeviceNameText = root.findViewById(R.id.edittext);
             mDeviceNameText.setFilters(new InputFilter[] {new InputFilter.LengthFilter(30)});
             if (mSavedDeviceName != null) {
                 mDeviceNameText.setText(mSavedDeviceName);
@@ -475,7 +516,7 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
             mSavedDeviceName = null;
             AlertDialog dialog = new AlertDialog.Builder(getActivity())
                 .setTitle(R.string.wifi_p2p_menu_rename)
-                .setView(mDeviceNameText)
+                .setView(root)
                 .setPositiveButton(getActivity().getString(R.string.dlg_ok), mRenameListener)
                 .setNegativeButton(getActivity().getString(R.string.dlg_cancel), null)
                 .create();
@@ -494,8 +535,18 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.WIFI_P2P;
+    public int getDialogMetricsCategory(int dialogId) {
+        switch (dialogId) {
+            case DIALOG_DISCONNECT:
+                return SettingsEnums.DIALOG_WIFI_P2P_DISCONNECT;
+            case DIALOG_CANCEL_CONNECT:
+                return SettingsEnums.DIALOG_WIFI_P2P_CANCEL_CONNECT;
+            case DIALOG_RENAME:
+                return SettingsEnums.DIALOG_WIFI_P2P_RENAME;
+            case DIALOG_DELETE_GROUP:
+                return SettingsEnums.DIALOG_WIFI_P2P_DELETE_GROUP;
+        }
+        return 0;
     }
 
     @Override
@@ -512,59 +563,26 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
     }
 
     private void handlePeersChanged() {
-        mPeersGroup.removeAll();
+        mPeerCategoryController.removeAllChildren();
 
         mConnectedDevices = 0;
         if (DBG) Log.d(TAG, "List of available peers");
         for (WifiP2pDevice peer: mPeers.getDeviceList()) {
             if (DBG) Log.d(TAG, "-> " + peer);
-            mPeersGroup.addPreference(new WifiP2pPeer(getActivity(), peer));
+            mPeerCategoryController.addChild(new WifiP2pPeer(getPrefContext(), peer));
             if (peer.status == WifiP2pDevice.CONNECTED) mConnectedDevices++;
         }
         if (DBG) Log.d(TAG, " mConnectedDevices " + mConnectedDevices);
     }
-    private String utfToString(String utf) {
-        int value;
-        byte[] utfBytes = utf.getBytes();
-        ByteBuffer decodedBytes = ByteBuffer.allocate(utf.length());
-        int size = 0;
-        for (int i = 0; i < utfBytes.length; i++) {
-            if ((utfBytes[i] == '\\') && (utfBytes[i + 1] == 'x')) {
-               value = Integer.parseInt(utf.substring(i + 2, i + 4), 16);
-               decodedBytes.put((byte) value);
-               i = i + 3;
-            } else {
-               decodedBytes.put(utfBytes[i]);
-            }
-            size++;
-        }
-        try {
-            ByteBuffer sink = ByteBuffer.allocate(size);
-            for (int j = 0; j < size; j++) {
-                sink.put(decodedBytes.get(j));
-            }
-            return new String(sink.array(), "UTF-8");
-        } catch (UnsupportedEncodingException uee) {
-            uee.printStackTrace();
-        }
-        return null;
-    }
+
     @Override
     public void onPersistentGroupInfoAvailable(WifiP2pGroupList groups) {
-        CharSequence cs = "\\x";
-        mPersistentGroup.removeAll();
+        mPersistentCategoryController.removeAllChildren();
 
         for (WifiP2pGroup group: groups.getGroupList()) {
-            String networkName = group.getNetworkName();
-            if (networkName.contains(cs)){
-                String string = utfToString(networkName);
-                if (string != null){
-                    group.setNetworkName(string);
-                }
-            }
             if (DBG) Log.d(TAG, " group " + group);
-            WifiP2pPersistentGroup wppg = new WifiP2pPersistentGroup(getActivity(), group);
-            mPersistentGroup.addPreference(wppg);
+            WifiP2pPersistentGroup wppg = new WifiP2pPersistentGroup(getPrefContext(), group);
+            mPersistentCategoryController.addChild(wppg);
             if (wppg.getGroupName().equals(mSelectedGroupName)) {
                 if (DBG) Log.d(TAG, "Selecting group " + wppg.getGroupName());
                 mSelectedGroup = wppg;
@@ -587,11 +605,18 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
         handlePeersChanged();
     }
 
+    @Override
+    public void onDeviceInfoAvailable(WifiP2pDevice wifiP2pDevice) {
+        mThisDevice = wifiP2pDevice;
+        if (DBG) Log.d(TAG, "Update device info: " + mThisDevice);
+        mThisDevicePreferenceController.updateDeviceName(mThisDevice);
+    }
+
     private void handleP2pStateChanged() {
         updateSearchMenu(false);
-        mThisDevicePref.setEnabled(mWifiP2pEnabled);
-        mPeersGroup.setEnabled(mWifiP2pEnabled);
-        mPersistentGroup.setEnabled(mWifiP2pEnabled);
+        mThisDevicePreferenceController.setEnabled(mWifiP2pEnabled);
+        mPersistentCategoryController.setEnabled(mWifiP2pEnabled);
+        mPeerCategoryController.setEnabled(mWifiP2pEnabled);
     }
 
     private void updateSearchMenu(boolean searching) {
@@ -609,16 +634,6 @@ public class WifiP2pSettings extends SettingsPreferenceFragment
                     if (DBG) Log.d(TAG, " discover fail " + reason);
                 }
             });
-        }
-    }
-
-    private void updateDevicePref() {
-        if (mThisDevice != null) {
-            if (TextUtils.isEmpty(mThisDevice.deviceName)) {
-                mThisDevicePref.setTitle(mThisDevice.deviceAddress);
-            } else {
-                mThisDevicePref.setTitle(mThisDevice.deviceName);
-            }
         }
     }
 }

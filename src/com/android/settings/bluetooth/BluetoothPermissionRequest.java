@@ -17,6 +17,7 @@
 package com.android.settings.bluetooth;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.bluetooth.BluetoothDevice;
@@ -45,6 +46,12 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
     private static final String NOTIFICATION_TAG_PBAP = "Phonebook Access" ;
     private static final String NOTIFICATION_TAG_MAP = "Message Access";
     private static final String NOTIFICATION_TAG_SAP = "SIM Access";
+    /* TODO: Consolidate this multiple defined but common channel ID with other
+     * handlers that declare and use the same channel ID */
+    private static final String BLUETOOTH_NOTIFICATION_CHANNEL =
+        "bluetooth_notification_channel";
+
+    private NotificationChannel mNotificationChannel = null;
 
     Context mContext;
     int mRequestType;
@@ -62,7 +69,7 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
         if (action.equals(BluetoothDevice.ACTION_CONNECTION_ACCESS_REQUEST)) {
             UserManager um = (UserManager) context.getSystemService(Context.USER_SERVICE);
             // skip the notification for managed profiles.
-            if (com.android.settings.Utils.isManagedProfile(um)) {
+            if (um.isManagedProfile()) {
                 if (DEBUG) Log.d(TAG, "Blocking notification for managed profile.");
                 return;
             }
@@ -118,13 +125,6 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
                             context, deviceAddress, deviceName)) {
                 context.startActivity(connectionAccessIntent);
             } else {
-                // Acquire wakelock so that LCD comes up since screen is off
-                PowerManager.WakeLock wakeLock = powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK |
-                    PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
-                        "ConnectionAccessActivity");
-                wakeLock.setReferenceCounted(false);
-                wakeLock.acquire();
-
                 // Put up a notification that leads to the dialog
 
                 // Create an intent triggered by clicking on the
@@ -135,7 +135,7 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
                 deleteIntent.putExtra(BluetoothDevice.EXTRA_CONNECTION_ACCESS_RESULT,
                         BluetoothDevice.CONNECTION_ACCESS_NO);
                 deleteIntent.putExtra(BluetoothDevice.EXTRA_ACCESS_REQUEST_TYPE, mRequestType);
-                String deviceAlias = mDevice != null ? mDevice.getAliasName() : null;
+                String deviceAlias = Utils.createRemoteName(context, mDevice);
                 switch (mRequestType) {
                     case BluetoothDevice.REQUEST_TYPE_PHONEBOOK_ACCESS:
                         title = context.getString(R.string.bluetooth_phonebook_request);
@@ -158,7 +158,16 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
                                 deviceAlias, deviceAlias);
                         break;
                 }
-                Notification notification = new Notification.Builder(context)
+                NotificationManager notificationManager =
+                    (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (mNotificationChannel == null) {
+                    mNotificationChannel = new NotificationChannel(BLUETOOTH_NOTIFICATION_CHANNEL,
+                            context.getString(R.string.bluetooth),
+                            NotificationManager.IMPORTANCE_HIGH);
+                    notificationManager.createNotificationChannel(mNotificationChannel);
+                }
+                Notification notification = new Notification.Builder(context,
+                        BLUETOOTH_NOTIFICATION_CHANNEL)
                         .setContentTitle(title)
                         .setTicker(message)
                         .setContentText(message)
@@ -172,16 +181,13 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
                         .setDeleteIntent(PendingIntent.getBroadcast(context, 0, deleteIntent, 0))
                         .setColor(context.getColor(
                                 com.android.internal.R.color.system_notification_accent_color))
+                        .setLocalOnly(true)
                         .build();
 
                 notification.flags |= Notification.FLAG_NO_CLEAR; // Cannot be set with the builder.
 
-                NotificationManager notificationManager =
-                    (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-
                 notificationManager.notify(getNotificationTag(mRequestType), NOTIFICATION_ID,
                         notification);
-                wakeLock.release();
             }
         } else if (action.equals(BluetoothDevice.ACTION_CONNECTION_ACCESS_CANCEL)) {
             // Remove the notification
@@ -225,49 +231,48 @@ public final class BluetoothPermissionRequest extends BroadcastReceiver {
             bluetoothManager.getCachedDeviceManager();
         CachedBluetoothDevice cachedDevice = cachedDeviceManager.findDevice(mDevice);
         if (cachedDevice == null) {
-            cachedDevice = cachedDeviceManager.addDevice(bluetoothManager.getBluetoothAdapter(),
-                bluetoothManager.getProfileManager(), mDevice);
+            cachedDevice = cachedDeviceManager.addDevice(mDevice);
         }
 
         String intentName = BluetoothDevice.ACTION_CONNECTION_ACCESS_REPLY;
 
         if (mRequestType == BluetoothDevice.REQUEST_TYPE_PHONEBOOK_ACCESS) {
-            int phonebookPermission = cachedDevice.getPhonebookPermissionChoice();
+            int phonebookPermission = mDevice.getPhonebookAccessPermission();
 
-            if (phonebookPermission == CachedBluetoothDevice.ACCESS_UNKNOWN) {
+            if (phonebookPermission == BluetoothDevice.ACCESS_UNKNOWN) {
                 // Leave 'processed' as false.
-            } else if (phonebookPermission == CachedBluetoothDevice.ACCESS_ALLOWED) {
+            } else if (phonebookPermission == BluetoothDevice.ACCESS_ALLOWED) {
                 sendReplyIntentToReceiver(true);
                 processed = true;
-            } else if (phonebookPermission == CachedBluetoothDevice.ACCESS_REJECTED) {
+            } else if (phonebookPermission == BluetoothDevice.ACCESS_REJECTED) {
                 sendReplyIntentToReceiver(false);
                 processed = true;
             } else {
                 Log.e(TAG, "Bad phonebookPermission: " + phonebookPermission);
             }
         } else if (mRequestType == BluetoothDevice.REQUEST_TYPE_MESSAGE_ACCESS) {
-            int messagePermission = cachedDevice.getMessagePermissionChoice();
+            int messagePermission = mDevice.getMessageAccessPermission();
 
-            if (messagePermission == CachedBluetoothDevice.ACCESS_UNKNOWN) {
+            if (messagePermission == BluetoothDevice.ACCESS_UNKNOWN) {
                 // Leave 'processed' as false.
-            } else if (messagePermission == CachedBluetoothDevice.ACCESS_ALLOWED) {
+            } else if (messagePermission == BluetoothDevice.ACCESS_ALLOWED) {
                 sendReplyIntentToReceiver(true);
                 processed = true;
-            } else if (messagePermission == CachedBluetoothDevice.ACCESS_REJECTED) {
+            } else if (messagePermission == BluetoothDevice.ACCESS_REJECTED) {
                 sendReplyIntentToReceiver(false);
                 processed = true;
             } else {
                 Log.e(TAG, "Bad messagePermission: " + messagePermission);
             }
         } else if(mRequestType == BluetoothDevice.REQUEST_TYPE_SIM_ACCESS) {
-            int simPermission = cachedDevice.getSimPermissionChoice();
+            int simPermission = mDevice.getSimAccessPermission();
 
-            if (simPermission == CachedBluetoothDevice.ACCESS_UNKNOWN) {
+            if (simPermission == BluetoothDevice.ACCESS_UNKNOWN) {
                 // Leave 'processed' as false.
-            } else if (simPermission == CachedBluetoothDevice.ACCESS_ALLOWED) {
+            } else if (simPermission == BluetoothDevice.ACCESS_ALLOWED) {
                 sendReplyIntentToReceiver(true);
                 processed = true;
-            } else if (simPermission == CachedBluetoothDevice.ACCESS_REJECTED) {
+            } else if (simPermission == BluetoothDevice.ACCESS_REJECTED) {
                 sendReplyIntentToReceiver(false);
                 processed = true;
             } else {

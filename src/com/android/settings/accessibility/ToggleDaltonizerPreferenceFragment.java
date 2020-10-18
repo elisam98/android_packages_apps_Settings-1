@@ -16,94 +16,204 @@
 
 package com.android.settings.accessibility;
 
+import static com.android.internal.accessibility.AccessibilityShortcutController.DALTONIZER_COMPONENT_NAME;
+import static com.android.settings.accessibility.AccessibilityStatsLogUtils.logAccessibilityServiceEnabled;
+import static com.android.settings.accessibility.AccessibilityUtil.State.OFF;
+import static com.android.settings.accessibility.AccessibilityUtil.State.ON;
+
+import android.app.settings.SettingsEnums;
+import android.content.Context;
+import android.content.res.Resources;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.provider.Settings;
-import android.support.v7.preference.ListPreference;
-import android.support.v7.preference.Preference;
+import android.view.LayoutInflater;
 import android.view.View;
-import android.view.accessibility.AccessibilityManager;
-import android.widget.Switch;
+import android.view.ViewGroup;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.SwitchPreference;
+
 import com.android.settings.R;
-import com.android.settings.widget.SwitchBar;
+import com.android.settings.search.BaseSearchIndexProvider;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.search.SearchIndexable;
 
-public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceFragment
-        implements Preference.OnPreferenceChangeListener, SwitchBar.OnSwitchChangeListener {
+import java.util.ArrayList;
+import java.util.List;
+
+/** Settings for daltonizer. */
+@SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
+public final class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceFragment
+        implements DaltonizerRadioButtonPreferenceController.OnChangeListener {
+
     private static final String ENABLED = Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED;
-    private static final String TYPE = Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER;
-    private static final int DEFAULT_TYPE = AccessibilityManager.DALTONIZER_CORRECT_DEUTERANOMALY;
+    private static final String KEY_PREVIEW = "daltonizer_preview";
+    private static final String KEY_CATEGORY_MODE = "daltonizer_mode_category";
+    private static final List<AbstractPreferenceController> sControllers = new ArrayList<>();
+    private final Handler mHandler = new Handler();
+    private SettingsContentObserver mSettingsContentObserver;
 
-    private ListPreference mType;
+    private static List<AbstractPreferenceController> buildPreferenceControllers(Context context,
+            Lifecycle lifecycle) {
+        if (sControllers.size() == 0) {
+            final Resources resources = context.getResources();
+            final String[] daltonizerKeys = resources.getStringArray(
+                    R.array.daltonizer_mode_keys);
 
-    @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.ACCESSIBILITY_TOGGLE_DALTONIZER;
-    }
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        addPreferencesFromResource(R.xml.accessibility_daltonizer_settings);
-
-        mType = (ListPreference) findPreference("type");
-
-        initPreferences();
-    }
-
-    @Override
-    protected void onPreferenceToggled(String preferenceKey, boolean enabled) {
-        Settings.Secure.putInt(getContentResolver(), ENABLED, enabled ? 1 : 0);
-    }
-
-    @Override
-    public boolean onPreferenceChange(Preference preference, Object newValue) {
-        if (preference == mType) {
-            Settings.Secure.putInt(getContentResolver(), TYPE, Integer.parseInt((String) newValue));
-            preference.setSummary("%s");
+            for (int i = 0; i < daltonizerKeys.length; i++) {
+                sControllers.add(new DaltonizerRadioButtonPreferenceController(
+                        context, lifecycle, daltonizerKeys[i]));
+            }
         }
+        return sControllers;
+    }
 
-        return true;
+    @Override
+    public void onCheckedChanged(Preference preference) {
+        for (AbstractPreferenceController controller : sControllers) {
+            controller.updateState(preference);
+        }
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        mComponentName = DALTONIZER_COMPONENT_NAME;
+        mPackageName = getText(R.string.accessibility_display_daltonizer_preference_title);
+        mHtmlDescription = getText(R.string.accessibility_display_daltonizer_preference_subtitle);
+        final List<String> enableServiceFeatureKeys = new ArrayList<>(/* initialCapacity= */ 1);
+        enableServiceFeatureKeys.add(ENABLED);
+        mSettingsContentObserver = new SettingsContentObserver(mHandler, enableServiceFeatureKeys) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                updateSwitchBarToggleSwitch();
+            }
+        };
+        return super.onCreateView(inflater, container, savedInstanceState);
     }
 
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-
-        setTitle(getString(R.string.accessibility_display_daltonizer_preference_title));
+        updatePreferenceOrder();
     }
 
-    @Override
-    protected void onInstallSwitchBarToggleSwitch() {
-        super.onInstallSwitchBarToggleSwitch();
-
-        mSwitchBar.setCheckedInternal(
-                Settings.Secure.getInt(getContentResolver(), ENABLED, 0) == 1);
-        mSwitchBar.addOnSwitchChangeListener(this);
+    /** Customizes the order by preference key. */
+    private List<String> getPreferenceOrderList() {
+        List<String> lists = new ArrayList<>();
+        lists.add(KEY_PREVIEW);
+        lists.add(KEY_USE_SERVICE_PREFERENCE);
+        lists.add(KEY_CATEGORY_MODE);
+        lists.add(KEY_GENERAL_CATEGORY);
+        lists.add(KEY_INTRODUCTION_CATEGORY);
+        return lists;
     }
 
-    @Override
-    protected void onRemoveSwitchBarToggleSwitch() {
-        super.onRemoveSwitchBarToggleSwitch();
-        mSwitchBar.removeOnSwitchChangeListener(this);
-    }
+    private void updatePreferenceOrder() {
+        List<String> lists = getPreferenceOrderList();
+        final PreferenceScreen preferenceScreen = getPreferenceScreen();
+        preferenceScreen.setOrderingAsAdded(false);
 
-    private void initPreferences() {
-        final String value = Integer.toString(
-                Settings.Secure.getInt(getContentResolver(), TYPE, DEFAULT_TYPE));
-        mType.setValue(value);
-        mType.setOnPreferenceChangeListener(this);
-        final int index = mType.findIndexOfValue(value);
-        if (index < 0) {
-            // We're using a mode controlled by developer preferences.
-            mType.setSummary(getString(R.string.daltonizer_type_overridden,
-                    getString(R.string.simulate_color_space)));
+        final int size = lists.size();
+        for (int i = 0; i < size; i++) {
+            final Preference preference = preferenceScreen.findPreference(lists.get(i));
+            if (preference != null) {
+                preference.setOrder(i);
+            }
         }
     }
 
     @Override
-    public void onSwitchChanged(Switch switchView, boolean isChecked) {
-        onPreferenceToggled(mPreferenceKey, isChecked);
+    public void onResume() {
+        super.onResume();
+        updateSwitchBarToggleSwitch();
+        mSettingsContentObserver.register(getContentResolver());
+
+        for (AbstractPreferenceController controller :
+                buildPreferenceControllers(getPrefContext(), getSettingsLifecycle())) {
+            ((DaltonizerRadioButtonPreferenceController) controller).setOnChangeListener(this);
+            ((DaltonizerRadioButtonPreferenceController) controller).displayPreference(
+                    getPreferenceScreen());
+        }
     }
+
+    @Override
+    public void onPause() {
+        mSettingsContentObserver.unregister(getContentResolver());
+        for (AbstractPreferenceController controller :
+                buildPreferenceControllers(getPrefContext(), getSettingsLifecycle())) {
+            ((DaltonizerRadioButtonPreferenceController) controller).setOnChangeListener(null);
+        }
+        super.onPause();
+    }
+
+    @Override
+    public int getMetricsCategory() {
+        return SettingsEnums.ACCESSIBILITY_TOGGLE_DALTONIZER;
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_url_color_correction;
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.accessibility_daltonizer_settings;
+    }
+
+    @Override
+    protected void onPreferenceToggled(String preferenceKey, boolean enabled) {
+        logAccessibilityServiceEnabled(mComponentName, enabled);
+        Settings.Secure.putInt(getContentResolver(), ENABLED, enabled ? ON : OFF);
+    }
+
+    @Override
+    protected void onRemoveSwitchPreferenceToggleSwitch() {
+        super.onRemoveSwitchPreferenceToggleSwitch();
+        mToggleServiceDividerSwitchPreference.setOnPreferenceClickListener(null);
+    }
+
+    @Override
+    protected void updateToggleServiceTitle(SwitchPreference switchPreference) {
+        switchPreference.setTitle(R.string.accessibility_daltonizer_master_switch_title);
+    }
+
+    @Override
+    protected void onInstallSwitchPreferenceToggleSwitch() {
+        super.onInstallSwitchPreferenceToggleSwitch();
+        updateSwitchBarToggleSwitch();
+        mToggleServiceDividerSwitchPreference.setOnPreferenceClickListener((preference) -> {
+            boolean checked = ((SwitchPreference) preference).isChecked();
+            onPreferenceToggled(mPreferenceKey, checked);
+            return false;
+        });
+    }
+
+    @Override
+    public void onSettingsClicked(ShortcutPreference preference) {
+        super.onSettingsClicked(preference);
+        showDialog(DialogEnums.EDIT_SHORTCUT);
+    }
+
+    @Override
+    int getUserShortcutTypes() {
+        return AccessibilityUtil.getUserShortcutTypesFromSettings(getPrefContext(),
+                mComponentName);
+    }
+
+    private void updateSwitchBarToggleSwitch() {
+        final boolean checked = Settings.Secure.getInt(getContentResolver(), ENABLED, OFF) == ON;
+        if (mToggleServiceDividerSwitchPreference.isChecked() == checked) {
+            return;
+        }
+        mToggleServiceDividerSwitchPreference.setChecked(checked);
+    }
+
+    public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
+            new BaseSearchIndexProvider(R.xml.accessibility_daltonizer_settings);
 }

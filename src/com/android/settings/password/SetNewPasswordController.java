@@ -17,8 +17,10 @@
 package com.android.settings.password;
 
 import static android.app.admin.DevicePolicyManager.ACTION_SET_NEW_PASSWORD;
+import static android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FACE;
 import static android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FINGERPRINT;
 import static android.app.admin.DevicePolicyManager.PASSWORD_QUALITY_SOMETHING;
+
 import static com.android.internal.util.Preconditions.checkNotNull;
 
 import android.annotation.Nullable;
@@ -27,15 +29,15 @@ import android.app.admin.DevicePolicyManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.face.FaceManager;
 import android.hardware.fingerprint.FingerprintManager;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.UserManager;
 
-import com.android.internal.annotations.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
+
 import com.android.internal.widget.LockPatternUtils;
-import com.android.settings.ChooseLockGeneric;
-import com.android.settings.ChooseLockSettingsHelper;
 import com.android.settings.Utils;
 
 /**
@@ -57,7 +59,10 @@ final class SetNewPasswordController {
      */
     private final int mTargetUserId;
     private final PackageManager mPackageManager;
-    @Nullable private final IFingerprintManager mFingerprintManager;
+    @Nullable
+    private final FingerprintManager mFingerprintManager;
+    @Nullable
+    private final FaceManager mFaceManager;
     private final DevicePolicyManager mDevicePolicyManager;
     private final Ui mUi;
 
@@ -77,15 +82,11 @@ final class SetNewPasswordController {
             }
         }
         // Create a wrapper of FingerprintManager for testing, see IFingerPrintManager for details.
-        final FingerprintManager fingerprintManager =
-                (FingerprintManager) context.getSystemService(Context.FINGERPRINT_SERVICE);
-        final IFingerprintManager fingerprintManagerWrapper =
-                fingerprintManager == null
-                        ? null
-                        : new FingerprintManagerWrapper(fingerprintManager);
+        final FingerprintManager fingerprintManager = Utils.getFingerprintManagerOrNull(context);
+        final FaceManager faceManager = Utils.getFaceManagerOrNull(context);
         return new SetNewPasswordController(userId,
                 context.getPackageManager(),
-                fingerprintManagerWrapper,
+                fingerprintManager, faceManager,
                 (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE), ui);
     }
 
@@ -93,12 +94,14 @@ final class SetNewPasswordController {
     SetNewPasswordController(
             int targetUserId,
             PackageManager packageManager,
-            IFingerprintManager fingerprintManager,
+            FingerprintManager fingerprintManager,
+            FaceManager faceManager,
             DevicePolicyManager devicePolicyManager,
             Ui ui) {
         mTargetUserId = targetUserId;
         mPackageManager = checkNotNull(packageManager);
         mFingerprintManager = fingerprintManager;
+        mFaceManager = faceManager;
         mDevicePolicyManager = checkNotNull(devicePolicyManager);
         mUi = checkNotNull(ui);
     }
@@ -108,7 +111,14 @@ final class SetNewPasswordController {
      */
     public void dispatchSetNewPasswordIntent() {
         final Bundle extras;
-        if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)
+        // TODO: handle the case with multiple biometrics, perhaps take an arg for biometric type?
+        if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_FACE)
+                && mFaceManager != null
+                && mFaceManager.isHardwareDetected()
+                && !mFaceManager.hasEnrolledTemplates(mTargetUserId)
+                && !isFaceDisabledByAdmin()) {
+            extras = getFaceChooseLockExtras();
+        } else if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)
                 && mFingerprintManager != null
                 && mFingerprintManager.isHardwareDetected()
                 && !mFingerprintManager.hasEnrolledFingerprints(mTargetUserId)
@@ -136,9 +146,28 @@ final class SetNewPasswordController {
         return chooseLockExtras;
     }
 
+    private Bundle getFaceChooseLockExtras() {
+        Bundle chooseLockExtras = new Bundle();
+        long challenge = mFaceManager.generateChallenge();
+        chooseLockExtras.putInt(ChooseLockGeneric.ChooseLockGenericFragment.MINIMUM_QUALITY_KEY,
+                PASSWORD_QUALITY_SOMETHING);
+        chooseLockExtras.putBoolean(
+                ChooseLockGeneric.ChooseLockGenericFragment.HIDE_DISABLED_PREFS, true);
+        chooseLockExtras.putBoolean(ChooseLockSettingsHelper.EXTRA_KEY_HAS_CHALLENGE, true);
+        chooseLockExtras.putLong(ChooseLockSettingsHelper.EXTRA_KEY_CHALLENGE, challenge);
+        chooseLockExtras.putBoolean(ChooseLockSettingsHelper.EXTRA_KEY_FOR_FACE, true);
+        return chooseLockExtras;
+    }
+
     private boolean isFingerprintDisabledByAdmin() {
         int disabledFeatures =
                 mDevicePolicyManager.getKeyguardDisabledFeatures(null, mTargetUserId);
         return (disabledFeatures & KEYGUARD_DISABLE_FINGERPRINT) != 0;
+    }
+
+    private boolean isFaceDisabledByAdmin() {
+        int disabledFeatures =
+                mDevicePolicyManager.getKeyguardDisabledFeatures(null, mTargetUserId);
+        return (disabledFeatures & KEYGUARD_DISABLE_FACE) != 0;
     }
 }

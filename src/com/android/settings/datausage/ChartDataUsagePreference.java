@@ -15,21 +15,32 @@
 package com.android.settings.datausage;
 
 import android.content.Context;
-import android.content.res.TypedArray;
+import android.content.res.Resources;
 import android.net.NetworkPolicy;
-import android.net.NetworkStatsHistory;
 import android.net.TrafficStats;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceViewHolder;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
+import android.text.format.DateUtils;
 import android.text.format.Formatter;
 import android.text.style.ForegroundColorSpan;
 import android.util.AttributeSet;
 import android.util.SparseIntArray;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceViewHolder;
+
 import com.android.settings.R;
 import com.android.settings.Utils;
-import com.android.settingslib.graph.UsageView;
+import com.android.settings.widget.UsageView;
+import com.android.settingslib.net.NetworkCycleChartData;
+import com.android.settingslib.net.NetworkCycleData;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class ChartDataUsagePreference extends Preference {
 
@@ -40,34 +51,36 @@ public class ChartDataUsagePreference extends Preference {
     private final int mWarningColor;
     private final int mLimitColor;
 
+    private Resources mResources;
     private NetworkPolicy mPolicy;
     private long mStart;
     private long mEnd;
-    private NetworkStatsHistory mNetwork;
+    private NetworkCycleChartData mNetworkCycleChartData;
     private int mSecondaryColor;
     private int mSeriesColor;
 
     public ChartDataUsagePreference(Context context, AttributeSet attrs) {
         super(context, attrs);
+        mResources = context.getResources();
         setSelectable(false);
-        // TODO: Resource.
-        mLimitColor = 0xfff4511e;
-        TypedArray a = context.getTheme().obtainStyledAttributes(
-                new int[]{android.R.attr.textColorSecondary});
-        mWarningColor = a.getColor(0, 0);
+        mLimitColor = Utils.getColorAttrDefaultColor(context, android.R.attr.colorError);
+        mWarningColor = Utils.getColorAttrDefaultColor(context, android.R.attr.textColorSecondary);
         setLayoutResource(R.layout.data_usage_graph);
     }
 
     @Override
     public void onBindViewHolder(PreferenceViewHolder holder) {
         super.onBindViewHolder(holder);
-        UsageView chart = (UsageView) holder.findViewById(R.id.data_usage);
-        if (mNetwork == null) return;
+        final UsageView chart = (UsageView) holder.findViewById(R.id.data_usage);
+        if (mNetworkCycleChartData == null) {
+            return;
+        }
 
-        int top = getTop();
+        final int top = getTop();
         chart.clearPaths();
-        chart.configureGraph(toInt(mEnd - mStart), top, false, false);
-        calcPoints(chart);
+        chart.configureGraph(toInt(mEnd - mStart), top);
+        calcPoints(chart, mNetworkCycleChartData.getUsageBuckets());
+        setupContentDescription(chart, mNetworkCycleChartData.getUsageBuckets());
         chart.setBottomLabels(new CharSequence[] {
                 Utils.formatDateRange(getContext(), mStart, mStart),
                 Utils.formatDateRange(getContext(), mEnd, mEnd),
@@ -77,46 +90,164 @@ public class ChartDataUsagePreference extends Preference {
     }
 
     public int getTop() {
-        NetworkStatsHistory.Entry entry = null;
-        long totalData = 0;
-        final int start = mNetwork.getIndexBefore(mStart);
-        final int end = mNetwork.getIndexAfter(mEnd);
-
-        for (int i = start; i <= end; i++) {
-            entry = mNetwork.getValues(i, entry);
-
-            // increment by current bucket total
-            totalData += entry.rxBytes + entry.txBytes;
-        }
-        long policyMax = mPolicy != null ? Math.max(mPolicy.limitBytes, mPolicy.warningBytes) : 0;
+        final long totalData = mNetworkCycleChartData.getTotalUsage();
+        final long policyMax =
+            mPolicy != null ? Math.max(mPolicy.limitBytes, mPolicy.warningBytes) : 0;
         return (int) (Math.max(totalData, policyMax) / RESOLUTION);
     }
 
-    private void calcPoints(UsageView chart) {
-        SparseIntArray points = new SparseIntArray();
-        NetworkStatsHistory.Entry entry = null;
-
-        long totalData = 0;
-
-        final int start = mNetwork.getIndexAfter(mStart);
-        final int end = mNetwork.getIndexAfter(mEnd);
-        if (start < 0) return;
-
+    @VisibleForTesting
+    void calcPoints(UsageView chart, List<NetworkCycleData> usageSummary) {
+        if (usageSummary == null) {
+            return;
+        }
+        final SparseIntArray points = new SparseIntArray();
         points.put(0, 0);
-        for (int i = start; i <= end; i++) {
-            entry = mNetwork.getValues(i, entry);
 
-            final long startTime = entry.bucketStart;
-            final long endTime = startTime + entry.bucketDuration;
+        final long now = System.currentTimeMillis();
+        long totalData = 0;
+        for (NetworkCycleData data : usageSummary) {
+            final long startTime = data.getStartTime();
+            if (startTime > now) {
+                break;
+            }
+            final long endTime = data.getEndTime();
 
             // increment by current bucket total
-            totalData += entry.rxBytes + entry.txBytes;
+            totalData += data.getTotalUsage();
 
+            if (points.size() == 1) {
+                points.put(toInt(startTime - mStart) - 1, -1);
+            }
             points.put(toInt(startTime - mStart + 1), (int) (totalData / RESOLUTION));
             points.put(toInt(endTime - mStart), (int) (totalData / RESOLUTION));
         }
         if (points.size() > 1) {
             chart.addPath(points);
+        }
+    }
+
+    private void setupContentDescription(UsageView chart, List<NetworkCycleData> usageSummary) {
+        final Context context = getContext();
+        final StringBuilder contentDescription = new StringBuilder();
+        final int flags = DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_ABBREV_MONTH;
+
+        // Setup a brief content description.
+        final String startDate = DateUtils.formatDateTime(context, mStart, flags);
+        final String endDate = DateUtils.formatDateTime(context, mEnd, flags);
+        final String briefContentDescription = mResources
+                .getString(R.string.data_usage_chart_brief_content_description, startDate, endDate);
+        contentDescription.append(briefContentDescription);
+
+        if (usageSummary == null || usageSummary.isEmpty()) {
+            final String noDataContentDescription = mResources
+                    .getString(R.string.data_usage_chart_no_data_content_description);
+            contentDescription.append(noDataContentDescription);
+            chart.setContentDescription(contentDescription);
+            return;
+        }
+
+        // Append more detailed stats.
+        String nodeDate;
+        String nodeContentDescription;
+        final List<DataUsageSummaryNode> densedStatsData = getDensedStatsData(usageSummary);
+        for (DataUsageSummaryNode data : densedStatsData) {
+            final int dataUsagePercentage = data.getDataUsagePercentage();
+            if (!data.isFromMultiNode() || dataUsagePercentage == 100) {
+                nodeDate = DateUtils.formatDateTime(context, data.getStartTime(), flags);
+            } else {
+                nodeDate = DateUtils.formatDateRange(context, data.getStartTime(),
+                        data.getEndTime(), flags);
+            }
+            nodeContentDescription = String.format(";%s %d%%", nodeDate, dataUsagePercentage);
+
+            contentDescription.append(nodeContentDescription);
+        }
+
+        chart.setContentDescription(contentDescription);
+    }
+
+    /**
+     * To avoid wordy data, e.g., Aug 2: 0%; Aug 3: 0%;...Aug 22: 0%; Aug 23: 2%.
+     * Collect the date of the same percentage, e.g., Aug 2 to Aug 22: 0%; Aug 23: 2%.
+     */
+    @VisibleForTesting
+    List<DataUsageSummaryNode> getDensedStatsData(List<NetworkCycleData> usageSummary) {
+        final List<DataUsageSummaryNode> dataUsageSummaryNodes = new ArrayList<>();
+        final long overallDataUsage = usageSummary.stream()
+                .mapToLong(NetworkCycleData::getTotalUsage).sum();
+        long cumulatedDataUsage = 0L;
+        int cumulatedDataUsagePercentage = 0;
+
+        // Collect List of DataUsageSummaryNode for data usage percentage information.
+        for (NetworkCycleData data : usageSummary) {
+            cumulatedDataUsage += data.getTotalUsage();
+            cumulatedDataUsagePercentage = (int) ((cumulatedDataUsage * 100) / overallDataUsage);
+
+            final DataUsageSummaryNode node = new DataUsageSummaryNode(data.getStartTime(),
+                    data.getEndTime(), cumulatedDataUsagePercentage);
+            dataUsageSummaryNodes.add(node);
+        }
+
+        // Group nodes of the same data usage percentage.
+        final Map<Integer, List<DataUsageSummaryNode>> nodesByDataUsagePercentage
+                = dataUsageSummaryNodes.stream().collect(
+                        Collectors.groupingBy(DataUsageSummaryNode::getDataUsagePercentage));
+
+        // Collect densed nodes from collection of the same  data usage percentage
+        final List<DataUsageSummaryNode> densedNodes = new ArrayList<>();
+        nodesByDataUsagePercentage.forEach((percentage, nodes) -> {
+            final long startTime = nodes.stream().mapToLong(DataUsageSummaryNode::getStartTime)
+                    .min().getAsLong();
+            final long endTime = nodes.stream().mapToLong(DataUsageSummaryNode::getEndTime)
+                    .max().getAsLong();
+
+            final DataUsageSummaryNode densedNode = new DataUsageSummaryNode(
+                    startTime, endTime, percentage);
+            if (nodes.size() > 1) {
+                densedNode.setFromMultiNode(true /* isFromMultiNode */);
+            }
+
+            densedNodes.add(densedNode);
+        });
+
+        return densedNodes.stream()
+                .sorted(Comparator.comparingInt(DataUsageSummaryNode::getDataUsagePercentage))
+                .collect(Collectors.toList());
+    }
+
+    @VisibleForTesting
+    class DataUsageSummaryNode {
+        private long mStartTime;
+        private long mEndTime;
+        private int mDataUsagePercentage;
+        private boolean mIsFromMultiNode;
+
+        public DataUsageSummaryNode(long startTime, long endTime, int dataUsagePercentage) {
+            mStartTime = startTime;
+            mEndTime = endTime;
+            mDataUsagePercentage = dataUsagePercentage;
+            mIsFromMultiNode = false;
+        }
+
+        public long getStartTime() {
+            return mStartTime;
+        }
+
+        public long getEndTime() {
+            return mEndTime;
+        }
+
+        public int getDataUsagePercentage() {
+            return mDataUsagePercentage;
+        }
+
+        public void setFromMultiNode(boolean isFromMultiNode) {
+            mIsFromMultiNode = isFromMultiNode;
+        }
+
+        public boolean isFromMultiNode() {
+            return mIsFromMultiNode;
         }
     }
 
@@ -153,8 +284,8 @@ public class ChartDataUsagePreference extends Preference {
     }
 
     private CharSequence getLabel(long bytes, int str, int mLimitColor) {
-        Formatter.BytesResult result = Formatter.formatBytes(getContext().getResources(),
-                bytes, Formatter.FLAG_SHORTER);
+        Formatter.BytesResult result = Formatter.formatBytes(mResources, bytes,
+                Formatter.FLAG_SHORTER | Formatter.FLAG_IEC_UNITS);
         CharSequence label = TextUtils.expandTemplate(getContext().getText(str),
                 result.value, result.units);
         return new SpannableStringBuilder().append(label, new ForegroundColorSpan(mLimitColor), 0);
@@ -162,12 +293,6 @@ public class ChartDataUsagePreference extends Preference {
 
     public void setNetworkPolicy(NetworkPolicy policy) {
         mPolicy = policy;
-        notifyChanged();
-    }
-
-    public void setVisibleRange(long start, long end) {
-        mStart = start;
-        mEnd = end;
         notifyChanged();
     }
 
@@ -179,8 +304,10 @@ public class ChartDataUsagePreference extends Preference {
         return mEnd;
     }
 
-    public void setNetworkStats(NetworkStatsHistory network) {
-        mNetwork = network;
+    public void setNetworkCycleData(NetworkCycleChartData data) {
+        mNetworkCycleChartData = data;
+        mStart = data.getStartTime();
+        mEnd = data.getEndTime();
         notifyChanged();
     }
 

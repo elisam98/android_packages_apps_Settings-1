@@ -16,6 +16,8 @@
 
 package com.android.settings.accounts;
 
+import static android.content.Intent.EXTRA_USER;
+
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
 import android.accounts.AccountManagerFuture;
@@ -32,14 +34,12 @@ import android.os.UserManager;
 import android.util.Log;
 import android.widget.Toast;
 
-import com.android.settings.ChooseLockSettingsHelper;
 import com.android.settings.R;
 import com.android.settings.Settings;
 import com.android.settings.Utils;
+import com.android.settings.password.ChooseLockSettingsHelper;
 
 import java.io.IOException;
-
-import static android.content.Intent.EXTRA_USER;
 /**
  * Entry point Activity for account setup. Works as follows
  *
@@ -72,7 +72,7 @@ public class AddAccountSettings extends Activity {
     private static final String KEY_CALLER_IDENTITY = "pendingIntent";
     private static final String SHOULD_NOT_RESOLVE = "SHOULDN'T RESOLVE!";
 
-    private static final String TAG = "AccountSettings";
+    private static final String TAG = "AddAccountSettings";
 
     /* package */ static final String EXTRA_SELECTED_ACCOUNT = "selected_account";
 
@@ -100,8 +100,9 @@ public class AddAccountSettings extends Activity {
                     addAccountOptions.putBoolean(EXTRA_HAS_MULTIPLE_USERS,
                             Utils.hasMultipleUsers(AddAccountSettings.this));
                     addAccountOptions.putParcelable(EXTRA_USER, mUserHandle);
-                    intent.putExtras(addAccountOptions);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    intent.putExtras(addAccountOptions)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
                     startActivityForResultAsUser(intent, ADD_ACCOUNT_REQUEST, mUserHandle);
                 } else {
                     setResult(RESULT_OK);

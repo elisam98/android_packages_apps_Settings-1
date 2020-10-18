@@ -16,10 +16,9 @@
 
 package com.android.settings.fuelgauge;
 
-import android.app.AlertDialog;
+import android.app.AppOpsManager;
 import android.app.Dialog;
-import android.app.DialogFragment;
-import android.app.Fragment;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.DialogInterface.OnClickListener;
@@ -30,30 +29,52 @@ import android.view.View;
 import android.widget.Checkable;
 import android.widget.TextView;
 
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog;
+import androidx.fragment.app.Fragment;
+
 import com.android.settings.R;
 import com.android.settings.applications.AppInfoBase;
+import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
+import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.applications.ApplicationsState.AppEntry;
+import com.android.settingslib.fuelgauge.PowerWhitelistBackend;
 
-public class HighPowerDetail extends DialogFragment implements OnClickListener,
+public class HighPowerDetail extends InstrumentedDialogFragment implements OnClickListener,
         View.OnClickListener {
 
     private static final String ARG_DEFAULT_ON = "default_on";
 
-    private final PowerWhitelistBackend mBackend = PowerWhitelistBackend.getInstance();
-
-    private String mPackageName;
+    @VisibleForTesting
+    PowerWhitelistBackend mBackend;
+    @VisibleForTesting
+    BatteryUtils mBatteryUtils;
+    @VisibleForTesting
+    String mPackageName;
+    @VisibleForTesting
+    int mPackageUid;
     private CharSequence mLabel;
     private boolean mDefaultOn;
-    private boolean mIsEnabled;
+    @VisibleForTesting
+    boolean mIsEnabled;
     private Checkable mOptionOn;
     private Checkable mOptionOff;
 
     @Override
+    public int getMetricsCategory() {
+        return SettingsEnums.DIALOG_HIGH_POWER_DETAILS;
+    }
+
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        final Context context = getContext();
+        mBatteryUtils = BatteryUtils.getInstance(context);
+        mBackend = PowerWhitelistBackend.getInstance(context);
 
         mPackageName = getArguments().getString(AppInfoBase.ARG_PACKAGE_NAME);
-        PackageManager pm = getContext().getPackageManager();
+        mPackageUid = getArguments().getInt(AppInfoBase.ARG_PACKAGE_UID);
+        final PackageManager pm = context.getPackageManager();
         try {
             mLabel = pm.getApplicationInfo(mPackageName, 0).loadLabel(pm);
         } catch (NameNotFoundException e) {
@@ -118,7 +139,10 @@ public class HighPowerDetail extends DialogFragment implements OnClickListener,
             boolean newValue = mIsEnabled;
             boolean oldValue = mBackend.isWhitelisted(mPackageName);
             if (newValue != oldValue) {
+                logSpecialPermissionChange(newValue, mPackageName, getContext());
                 if (newValue) {
+                    mBatteryUtils.setForceAppStandby(mPackageUid, mPackageName,
+                            AppOpsManager.MODE_ALLOWED);
                     mBackend.addApp(mPackageName);
                 } else {
                     mBackend.removeApp(mPackageName);
@@ -127,11 +151,19 @@ public class HighPowerDetail extends DialogFragment implements OnClickListener,
         }
     }
 
+    @VisibleForTesting
+    static void logSpecialPermissionChange(boolean whitelist, String packageName, Context context) {
+        int logCategory = whitelist ? SettingsEnums.APP_SPECIAL_PERMISSION_BATTERY_DENY
+                : SettingsEnums.APP_SPECIAL_PERMISSION_BATTERY_ALLOW;
+        FeatureFactory.getFactory(context).getMetricsFeatureProvider().action(context, logCategory,
+                packageName);
+    }
+
     @Override
     public void onDismiss(DialogInterface dialog) {
         super.onDismiss(dialog);
         Fragment target = getTargetFragment();
-        if (target != null) {
+        if (target != null && target.getActivity() != null) {
             target.onActivityResult(getTargetRequestCode(), 0, null);
         }
     }
@@ -141,18 +173,25 @@ public class HighPowerDetail extends DialogFragment implements OnClickListener,
     }
 
     public static CharSequence getSummary(Context context, String pkg) {
-        PowerWhitelistBackend powerWhitelist = PowerWhitelistBackend.getInstance();
-        return context.getString(powerWhitelist.isSysWhitelisted(pkg) ? R.string.high_power_system
-                : powerWhitelist.isWhitelisted(pkg) ? R.string.high_power_on
-                : R.string.high_power_off);
+        return getSummary(context, PowerWhitelistBackend.getInstance(context), pkg);
     }
 
-    public static void show(Fragment caller, String packageName, int requestCode,
-            boolean defaultToOn) {
+    @VisibleForTesting
+    static CharSequence getSummary(Context context, PowerWhitelistBackend powerWhitelist,
+            String pkg) {
+        return context.getString(
+                powerWhitelist.isSysWhitelisted(pkg) || powerWhitelist.isDefaultActiveApp(pkg)
+                        ? R.string.high_power_system
+                        : powerWhitelist.isWhitelisted(pkg)
+                                ? R.string.high_power_on
+                                : R.string.high_power_off);
+    }
+
+    public static void show(Fragment caller, int uid, String packageName, int requestCode) {
         HighPowerDetail fragment = new HighPowerDetail();
         Bundle args = new Bundle();
         args.putString(AppInfoBase.ARG_PACKAGE_NAME, packageName);
-        args.putBoolean(ARG_DEFAULT_ON, defaultToOn);
+        args.putInt(AppInfoBase.ARG_PACKAGE_UID, uid);
         fragment.setArguments(args);
         fragment.setTargetFragment(caller, requestCode);
         fragment.show(caller.getFragmentManager(), HighPowerDetail.class.getSimpleName());

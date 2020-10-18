@@ -15,7 +15,7 @@
   ~ limitations under the License
   -->
 
-<com.android.setupwizardlib.GlifLayout
+<com.google.android.setupdesign.GlifLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/setup_wizard_layout"
     android:layout_width="match_parent"
@@ -23,7 +23,7 @@
     style="?attr/fingerprint_layout_theme">
 
     <LinearLayout
-        style="@style/SuwContentFrame"
+        style="@style/SudContentFrame"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
@@ -34,50 +34,59 @@
              switch the text -->
         <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/suw_description_glif_margin_top">
+            android:layout_height="wrap_content">
 
             <TextView
-                style="@style/TextAppearance.FingerprintMessage"
-                android:id="@+id/start_message"
+                style="@style/SudDescription.Glif"
+                android:id="@+id/sud_layout_description"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minLines="3"
                 android:text="@string/security_settings_fingerprint_enroll_start_message"/>
 
             <TextView
-                style="@style/TextAppearance.FingerprintMessage"
+                style="@style/SudDescription.Glif"
                 android:id="@+id/repeat_message"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minLines="3"
                 android:text="@string/security_settings_fingerprint_enroll_repeat_message"
                 android:visibility="invisible"/>
 
         </FrameLayout>
 
-        <include layout="@layout/fingerprint_enroll_enrolling_content"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="@dimen/fingerprint_enrolling_content_margin_top"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
 
-        <TextView
-            style="@style/TextAppearance.FingerprintErrorText"
-            android:id="@+id/error_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:layout_gravity="center_horizontal"
-            android:accessibilityLiveRegion="polite"
-            android:visibility="invisible"/>
+            <com.google.android.setupdesign.view.FillContentLayout
+                android:layout_width="@dimen/fingerprint_progress_bar_max_size"
+                android:layout_height="@dimen/fingerprint_progress_bar_max_size"
+                android:paddingTop="0dp"
+                android:paddingBottom="0dp"
+                android:layout_marginVertical="24dp">
 
-        <Button
-            android:id="@+id/skip_button"
-            style="@style/SetupWizardButton.Negative"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/skip_label"
-            android:visibility="gone" />
+                <include layout="@layout/fingerprint_enroll_enrolling_content"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="center" />
+            </com.google.android.setupdesign.view.FillContentLayout>
+
+            <TextView
+                style="@style/TextAppearance.ErrorText"
+                android:id="@+id/error_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal|bottom"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:visibility="invisible"/>
+
+        </LinearLayout>
 
     </LinearLayout>
 
-</com.android.setupwizardlib.GlifLayout>
+</com.google.android.setupdesign.GlifLayout>

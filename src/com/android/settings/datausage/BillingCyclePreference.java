@@ -14,38 +14,52 @@
 
 package com.android.settings.datausage;
 
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
-import android.net.NetworkPolicy;
 import android.net.NetworkTemplate;
 import android.os.Bundle;
 import android.os.RemoteException;
-import android.support.v7.preference.Preference;
+import android.telephony.data.ApnSetting;
 import android.util.AttributeSet;
-import com.android.settings.R;
-import com.android.settings.Utils;
-import com.android.settings.datausage.CellDataPreference.DataStateListener;
 
-public class BillingCyclePreference extends Preference implements TemplatePreference {
+import androidx.preference.Preference;
+
+import com.android.settings.R;
+import com.android.settings.core.SubSettingLauncher;
+import com.android.settings.network.MobileDataEnabledListener;
+
+/**
+ * Preference which displays billing cycle of subscription
+ */
+public class BillingCyclePreference extends Preference
+        implements TemplatePreference, MobileDataEnabledListener.Client {
 
     private NetworkTemplate mTemplate;
     private NetworkServices mServices;
-    private NetworkPolicy mPolicy;
     private int mSubId;
+    private MobileDataEnabledListener mListener;
 
+    /**
+     * Preference constructor
+     *
+     * @param context Context of preference
+     * @param arrts The attributes of the XML tag that is inflating the preference
+     */
     public BillingCyclePreference(Context context, AttributeSet attrs) {
         super(context, attrs);
+        mListener = new MobileDataEnabledListener(context, this);
     }
 
     @Override
     public void onAttached() {
         super.onAttached();
-        mListener.setListener(true, mSubId, getContext());
+        mListener.start(mSubId);
     }
 
     @Override
     public void onDetached() {
-        mListener.setListener(false, mSubId, getContext());
+        mListener.stop();
         super.onDetached();
     }
 
@@ -55,16 +69,16 @@ public class BillingCyclePreference extends Preference implements TemplatePrefer
         mTemplate = template;
         mSubId = subId;
         mServices = services;
-        mPolicy = services.mPolicyEditor.getPolicy(mTemplate);
-        setSummary(getContext().getString(R.string.billing_cycle_fragment_summary,
-                mPolicy != null ? mPolicy.cycleDay : 1));
+        setSummary(null);
+
         setIntent(getIntent());
     }
 
     private void updateEnabled() {
         try {
-            setEnabled(mPolicy != null && mServices.mNetworkService.isBandwidthControlEnabled()
-                    && mServices.mTelephonyManager.getDataEnabled(mSubId)
+            setEnabled(mServices.mNetworkService.isBandwidthControlEnabled()
+                    && mServices.mTelephonyManager.createForSubscriptionId(mSubId)
+                            .isDataEnabledForApn(ApnSetting.TYPE_DEFAULT)
                     && mServices.mUserManager.isAdminUser());
         } catch (RemoteException e) {
             setEnabled(false);
@@ -73,16 +87,20 @@ public class BillingCyclePreference extends Preference implements TemplatePrefer
 
     @Override
     public Intent getIntent() {
-        Bundle args = new Bundle();
+        final Bundle args = new Bundle();
         args.putParcelable(DataUsageList.EXTRA_NETWORK_TEMPLATE, mTemplate);
-        return Utils.onBuildStartFragmentIntent(getContext(), BillingCycleSettings.class.getName(),
-                args, null, 0, getTitle(), false);
+        return new SubSettingLauncher(getContext())
+                .setDestination(BillingCycleSettings.class.getName())
+                .setArguments(args)
+                .setTitleRes(R.string.billing_cycle)
+                .setSourceMetricsCategory(SettingsEnums.PAGE_UNKNOWN)
+                .toIntent();
     }
 
-    private final DataStateListener mListener = new DataStateListener() {
-        @Override
-        public void onChange(boolean selfChange) {
-            updateEnabled();
-        }
-    };
+    /**
+     * Implementation of {@code MobileDataEnabledListener.Client}
+     */
+    public void onMobileDataEnabledChange() {
+        updateEnabled();
+    }
 }

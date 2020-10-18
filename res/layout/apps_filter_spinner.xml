@@ -15,39 +15,32 @@
      limitations under the License.
 -->
 
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="?android:attr/actionBarSize"
-    android:background="@drawable/switchbar_background"
-    android:gravity="center_vertical"
-    android:paddingEnd="@dimen/switchbar_subsettings_margin_end"
-    android:theme="?attr/switchBarTheme" >
+    android:layout_height="wrap_content"
+    android:background="@android:color/transparent">
 
-    <Spinner
+    <com.android.settingslib.widget.settingsspinner.SettingsSpinner
         android:id="@+id/filter_spinner"
         android:layout_height="wrap_content"
         android:layout_width="wrap_content"
-        android:layout_alignParentStart="true"
-        android:layout_marginStart="64dp"
-        android:layout_marginEnd="70dp"
-        android:layout_alignWithParentIfMissing="true"
-        android:layout_centerVertical="true"
-        android:textAlignment="viewStart" />
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="8dp"
+        android:theme="@style/Widget.PopupWindow.Settings"/>
 
     <ImageView
         android:id="@+id/filter_settings"
+        style="?android:attr/borderlessButtonStyle"
         android:layout_width="56dp"
         android:layout_height="56dp"
-        android:layout_alignParentEnd="true"
-        android:layout_centerVertical="true"
-        android:minHeight="0dp"
-        android:minWidth="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_toRightOf="@id/filter_spinner"
         android:contentDescription="@string/configure"
         android:scaleType="center"
-        android:src="@drawable/ic_settings_24dp"
-        style="?android:attr/borderlessButtonStyle"
-        android:visibility="gone" />
-
+        android:src="@drawable/ic_apps_filter_settings_24dp"
+        android:visibility="gone"/>
 
 </RelativeLayout>
 

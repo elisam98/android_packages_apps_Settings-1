@@ -14,19 +14,12 @@
 
 package com.android.settings.datausage;
 
-import android.app.AlertDialog;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.database.ContentObserver;
 import android.net.NetworkTemplate;
-import android.net.Uri;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.os.SystemProperties;
-import android.provider.Settings.Global;
-import android.support.v7.preference.PreferenceViewHolder;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -34,36 +27,44 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
 import android.widget.Checkable;
-import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.settings.CustomDialogPreference;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.appcompat.app.AlertDialog.Builder;
+import androidx.core.content.res.TypedArrayUtils;
+import androidx.preference.PreferenceViewHolder;
+
 import com.android.settings.R;
-import com.android.settings.Utils;
+import com.android.settings.network.MobileDataEnabledListener;
+import com.android.settings.network.ProxySubscriptionManager;
+import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.CustomDialogPreferenceCompat;
 
-import java.util.List;
-
-public class CellDataPreference extends CustomDialogPreference implements TemplatePreference {
+/**
+ * Preference of cellular data control within Data Usage
+ */
+public class CellDataPreference extends CustomDialogPreferenceCompat
+        implements TemplatePreference, MobileDataEnabledListener.Client {
 
     private static final String TAG = "CellDataPreference";
-    private static final String CARRIER_MODE_CT_CLASS_A = "ct_class_a";
 
     public int mSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
     public boolean mChecked;
-    private TelephonyManager mTelephonyManager;
-    private SubscriptionManager mSubscriptionManager;
-    private String mCarrierMode = SystemProperties.get("persist.radio.carrier_mode", "default");
-    private boolean mIsCTClassA = mCarrierMode.equals(CARRIER_MODE_CT_CLASS_A);
+    public boolean mMultiSimDialog;
+    private MobileDataEnabledListener mDataStateListener;
 
     public CellDataPreference(Context context, AttributeSet attrs) {
-        super(context, attrs, android.R.attr.switchPreferenceStyle);
+        super(context, attrs, TypedArrayUtils.getAttr(context,
+                androidx.preference.R.attr.switchPreferenceStyle,
+                android.R.attr.switchPreferenceStyle));
+        mDataStateListener = new MobileDataEnabledListener(context, this);
     }
 
     @Override
     protected void onRestoreInstanceState(Parcelable s) {
-        CellDataState state = (CellDataState) s;
+        final CellDataState state = (CellDataState) s;
         super.onRestoreInstanceState(state.getSuperState());
-        mTelephonyManager = TelephonyManager.from(getContext());
         mChecked = state.mChecked;
+        mMultiSimDialog = state.mMultiSimDialog;
         if (mSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             mSubId = state.mSubId;
             setKey(getKey() + mSubId);
@@ -73,8 +74,9 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
 
     @Override
     protected Parcelable onSaveInstanceState() {
-        CellDataState state = new CellDataState(super.onSaveInstanceState());
+        final CellDataState state = new CellDataState(super.onSaveInstanceState());
         state.mChecked = mChecked;
+        state.mMultiSimDialog = mMultiSimDialog;
         state.mSubId = mSubId;
         return state;
     }
@@ -82,12 +84,16 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
     @Override
     public void onAttached() {
         super.onAttached();
-        mListener.setListener(true, mSubId, getContext());
+        mDataStateListener.start(mSubId);
+        getProxySubscriptionManager()
+                .addActiveSubscriptionsListener(mOnSubscriptionsChangeListener);
     }
 
     @Override
     public void onDetached() {
-        mListener.setListener(false, mSubId, getContext());
+        mDataStateListener.stop();
+        getProxySubscriptionManager()
+                .removeActiveSubscriptionsListener(mOnSubscriptionsChangeListener);
         super.onDetached();
     }
 
@@ -96,24 +102,52 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
         if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             throw new IllegalArgumentException("CellDataPreference needs a SubscriptionInfo");
         }
-        mSubscriptionManager = SubscriptionManager.from(getContext());
-        mTelephonyManager = TelephonyManager.from(getContext());
+
+        getProxySubscriptionManager()
+                .addActiveSubscriptionsListener(mOnSubscriptionsChangeListener);
+
         if (mSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             mSubId = subId;
             setKey(getKey() + subId);
         }
+        updateEnabled();
         updateChecked();
     }
 
+    @VisibleForTesting
+    ProxySubscriptionManager getProxySubscriptionManager() {
+        return ProxySubscriptionManager.getInstance(getContext());
+    }
+
+    @VisibleForTesting
+    SubscriptionInfo getActiveSubscriptionInfo(int subId) {
+        return getProxySubscriptionManager().getActiveSubscriptionInfo(subId);
+    }
+
     private void updateChecked() {
-        setChecked(mTelephonyManager.getDataEnabled(mSubId));
+        setChecked(getContext().getSystemService(TelephonyManager.class).getDataEnabled(mSubId));
+    }
+
+    private void updateEnabled() {
+        // If this subscription is not active, for example, SIM card is taken out, we disable
+        // the button.
+        setEnabled(getActiveSubscriptionInfo(mSubId) != null);
     }
 
     @Override
     protected void performClick(View view) {
-        MetricsLogger.action(getContext(), MetricsEvent.ACTION_CELL_DATA_TOGGLE, !mChecked);
+        final Context context = getContext();
+        FeatureFactory.getFactory(context).getMetricsFeatureProvider()
+                .action(context, SettingsEnums.ACTION_CELL_DATA_TOGGLE, !mChecked);
+        final SubscriptionInfo currentSir = getActiveSubscriptionInfo(mSubId);
+        final SubscriptionInfo nextSir = getActiveSubscriptionInfo(
+                SubscriptionManager.getDefaultDataSubscriptionId());
         if (mChecked) {
-            super.performClick(view);
+            setMobileDataEnabled(false);
+            if (nextSir != null && currentSir != null
+                    && currentSir.getSubscriptionId() == nextSir.getSubscriptionId()) {
+                disableDataForOtherSubscriptions(mSubId);
+            }
         } else {
             setMobileDataEnabled(true);
         }
@@ -122,7 +156,7 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
     private void setMobileDataEnabled(boolean enabled) {
         if (DataUsageSummary.LOGD) Log.d(TAG, "setMobileDataEnabled(" + enabled + ","
                 + mSubId + ")");
-        mTelephonyManager.setDataEnabled(mSubId, enabled);
+        getContext().getSystemService(TelephonyManager.class).setDataEnabled(mSubId, enabled);
         setChecked(enabled);
     }
 
@@ -135,18 +169,22 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
     @Override
     public void onBindViewHolder(PreferenceViewHolder holder) {
         super.onBindViewHolder(holder);
-        View switchView = holder.findViewById(android.R.id.switch_widget);
+        final View switchView = holder.findViewById(android.R.id.switch_widget);
         switchView.setClickable(false);
         ((Checkable) switchView).setChecked(mChecked);
     }
 
     @Override
-    protected void onPrepareDialogBuilder(AlertDialog.Builder builder,
+    protected void onPrepareDialogBuilder(Builder builder,
             DialogInterface.OnClickListener listener) {
+        if (mMultiSimDialog) {
+            showMultiSimDialog(builder, listener);
+        } else {
             showDisableDialog(builder, listener);
+        }
     }
 
-    private void showDisableDialog(AlertDialog.Builder builder,
+    private void showDisableDialog(Builder builder,
             DialogInterface.OnClickListener listener) {
         builder.setTitle(null)
                 .setMessage(R.string.data_usage_disable_mobile)
@@ -154,43 +192,71 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
                 .setNegativeButton(android.R.string.cancel, null);
     }
 
+    private void showMultiSimDialog(Builder builder,
+            DialogInterface.OnClickListener listener) {
+        final SubscriptionInfo currentSir = getActiveSubscriptionInfo(mSubId);
+        final SubscriptionInfo nextSir = getActiveSubscriptionInfo(
+                SubscriptionManager.getDefaultDataSubscriptionId());
+
+        final String previousName = (nextSir == null)
+            ? getContext().getResources().getString(R.string.sim_selection_required_pref)
+            : nextSir.getDisplayName().toString();
+
+        builder.setTitle(R.string.sim_change_data_title);
+        builder.setMessage(getContext().getString(R.string.sim_change_data_message,
+                String.valueOf(currentSir != null ? currentSir.getDisplayName() : null),
+                previousName));
+
+        builder.setPositiveButton(R.string.okay, listener);
+        builder.setNegativeButton(R.string.cancel, null);
+    }
+
+    private void disableDataForOtherSubscriptions(int subId) {
+        final SubscriptionInfo subInfo = getActiveSubscriptionInfo(subId);
+        if (subInfo != null) {
+            getContext().getSystemService(TelephonyManager.class).setDataEnabled(subId, false);
+        }
+    }
+
     @Override
     protected void onClick(DialogInterface dialog, int which) {
         if (which != DialogInterface.BUTTON_POSITIVE) {
             return;
         }
+        if (mMultiSimDialog) {
+            getProxySubscriptionManager().get().setDefaultDataSubId(mSubId);
+            setMobileDataEnabled(true);
+            disableDataForOtherSubscriptions(mSubId);
+        } else {
             // TODO: extend to modify policy enabled flag.
             setMobileDataEnabled(false);
+        }
     }
 
-    private final DataStateListener mListener = new DataStateListener() {
-        @Override
-        public void onChange(boolean selfChange) {
-            updateChecked();
-        }
-    };
-
-    public abstract static class DataStateListener extends ContentObserver {
-        public DataStateListener() {
-            super(new Handler(Looper.getMainLooper()));
-        }
-
-        public void setListener(boolean listening, int subId, Context context) {
-            if (listening) {
-                Uri uri = Global.getUriFor(Global.MOBILE_DATA);
-                if (TelephonyManager.getDefault().getSimCount() != 1) {
-                    uri = Global.getUriFor(Global.MOBILE_DATA + subId);
+    @VisibleForTesting
+    final ProxySubscriptionManager.OnActiveSubscriptionChangedListener
+            mOnSubscriptionsChangeListener =
+            new ProxySubscriptionManager.OnActiveSubscriptionChangedListener() {
+                public void onChanged() {
+                    if (DataUsageSummary.LOGD) {
+                        Log.d(TAG, "onSubscriptionsChanged");
+                    }
+                    updateEnabled();
                 }
-                context.getContentResolver().registerContentObserver(uri, false, this);
-            } else {
-                context.getContentResolver().unregisterContentObserver(this);
-            }
-        }
+            };
+
+    /**
+     * Implementation of {@code MobileDataEnabledListener.Client}
+    */
+    @VisibleForTesting
+    public void onMobileDataEnabledChange() {
+        updateChecked();
     }
 
     public static class CellDataState extends BaseSavedState {
         public int mSubId;
         public boolean mChecked;
+        public boolean mMultiSimDialog;
 
         public CellDataState(Parcelable base) {
             super(base);
@@ -199,6 +265,7 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
         public CellDataState(Parcel source) {
             super(source);
             mChecked = source.readByte() != 0;
+            mMultiSimDialog = source.readByte() != 0;
             mSubId = source.readInt();
         }
 
@@ -206,6 +273,7 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
         public void writeToParcel(Parcel dest, int flags) {
             super.writeToParcel(dest, flags);
             dest.writeByte((byte) (mChecked ? 1 : 0));
+            dest.writeByte((byte) (mMultiSimDialog ? 1 : 0));
             dest.writeInt(mSubId);
         }
 

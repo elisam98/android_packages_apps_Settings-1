@@ -15,25 +15,31 @@
 package com.android.settings.datausage;
 
 import android.app.Application;
+import android.app.settings.SettingsEnums;
+import android.content.Context;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
+import android.telephony.SubscriptionManager;
 import android.widget.Switch;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.preference.Preference;
+
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
 import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.applications.AppStateBaseBridge.Callback;
 import com.android.settings.datausage.DataSaverBackend.Listener;
+import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.widget.SwitchBar;
 import com.android.settings.widget.SwitchBar.OnSwitchChangeListener;
 import com.android.settingslib.applications.ApplicationsState;
 import com.android.settingslib.applications.ApplicationsState.AppEntry;
 import com.android.settingslib.applications.ApplicationsState.Callbacks;
 import com.android.settingslib.applications.ApplicationsState.Session;
+import com.android.settingslib.search.SearchIndexable;
 
 import java.util.ArrayList;
 
+@SearchIndexable
 public class DataSaverSummary extends SettingsPreferenceFragment
         implements OnSwitchChangeListener, Listener, Callback, Callbacks {
 
@@ -59,13 +65,16 @@ public class DataSaverSummary extends SettingsPreferenceFragment
                 (Application) getContext().getApplicationContext());
         mDataSaverBackend = new DataSaverBackend(getContext());
         mDataUsageBridge = new AppStateDataUsageBridge(mApplicationsState, this, mDataSaverBackend);
-        mSession = mApplicationsState.newSession(this);
+        mSession = mApplicationsState.newSession(this, getSettingsLifecycle());
     }
 
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
         mSwitchBar = ((SettingsActivity) getActivity()).getSwitchBar();
+        mSwitchBar.setSwitchBarText(
+                R.string.data_saver_switch_title,
+                R.string.data_saver_switch_title);
         mSwitchBar.show();
         mSwitchBar.addOnSwitchChangeListener(this);
     }
@@ -76,7 +85,6 @@ public class DataSaverSummary extends SettingsPreferenceFragment
         mDataSaverBackend.refreshWhitelist();
         mDataSaverBackend.refreshBlacklist();
         mDataSaverBackend.addListener(this);
-        mSession.resume();
         mDataUsageBridge.resume();
     }
 
@@ -85,12 +93,11 @@ public class DataSaverSummary extends SettingsPreferenceFragment
         super.onPause();
         mDataSaverBackend.remListener(this);
         mDataUsageBridge.pause();
-        mSession.pause();
     }
 
     @Override
     public void onSwitchChanged(Switch switchView, boolean isChecked) {
-        synchronized(this) {
+        synchronized (this) {
             if (mSwitching) {
                 return;
             }
@@ -100,18 +107,18 @@ public class DataSaverSummary extends SettingsPreferenceFragment
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.DATA_SAVER_SUMMARY;
+    public int getMetricsCategory() {
+        return SettingsEnums.DATA_SAVER_SUMMARY;
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_url_data_saver;
     }
 
     @Override
     public void onDataSaverChanged(boolean isDataSaving) {
-        synchronized(this) {
+        synchronized (this) {
             mSwitchBar.setChecked(isDataSaving);
             mSwitching = false;
         }
@@ -186,4 +193,15 @@ public class DataSaverSummary extends SettingsPreferenceFragment
     public void onLoadEntriesCompleted() {
 
     }
+
+    public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
+            new BaseSearchIndexProvider(R.xml.data_saver) {
+
+                @Override
+                protected boolean isPageSearchEnabled(Context context) {
+                    return DataUsageUtils.hasMobileData(context)
+                            && DataUsageUtils.getDefaultSubscriptionId(context)
+                            != SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+                }
+            };
 }

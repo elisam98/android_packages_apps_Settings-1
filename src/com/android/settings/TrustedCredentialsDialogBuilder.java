@@ -17,7 +17,6 @@ package com.android.settings;
 
 import android.annotation.NonNull;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
 import android.content.DialogInterface;
 import android.content.pm.UserInfo;
@@ -31,6 +30,8 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
+
+import androidx.appcompat.app.AlertDialog;
 
 import com.android.internal.widget.LockPatternUtils;
 import com.android.settings.TrustedCredentialsSettings.CertHolder;
@@ -138,7 +139,7 @@ class TrustedCredentialsDialogBuilder extends AlertDialog.Builder {
                     onClickOk();
                 }
             } else if (view == mNegativeButton) {
-                onClickRemove();
+                onClickEnableOrDisable();
             }
         }
 
@@ -155,21 +156,26 @@ class TrustedCredentialsDialogBuilder extends AlertDialog.Builder {
             }
         }
 
-        private void onClickRemove() {
+        private void onClickEnableOrDisable() {
             final CertHolder certHolder = getCurrentCertInfo();
-            new AlertDialog.Builder(mActivity)
-                    .setMessage(getButtonConfirmation(certHolder))
-                    .setPositiveButton(android.R.string.yes,
-                            new DialogInterface.OnClickListener() {
-                                @Override
-                                public void onClick(DialogInterface dialog, int id) {
-                                    mDelegate.removeOrInstallCert(certHolder);
-                                    dialog.dismiss();
-                                    nextOrDismiss();
-                                }
-                            })
-                    .setNegativeButton(android.R.string.no, null)
-                    .show();
+            DialogInterface.OnClickListener onConfirm = new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int id) {
+                    mDelegate.removeOrInstallCert(certHolder);
+                    nextOrDismiss();
+                }
+            };
+            if (certHolder.isSystemCert()) {
+                // Removing system certs is reversible, so skip confirmation.
+                onConfirm.onClick(null, -1);
+            } else {
+                new AlertDialog.Builder(mActivity)
+                        .setMessage(R.string.trusted_credentials_remove_confirmation)
+                        .setPositiveButton(android.R.string.yes, onConfirm)
+                        .setNegativeButton(android.R.string.no, null)
+                        .show();
+
+            }
         }
 
         private void onCredentialConfirmed(int userId) {
@@ -223,7 +229,7 @@ class TrustedCredentialsDialogBuilder extends AlertDialog.Builder {
                     && !mDpm.isCaCertApproved(certHolder.getAlias(), certHolder.getUserId());
 
             final boolean isProfileOrDeviceOwner = RestrictedLockUtils.getProfileOrDeviceOwner(
-                    mActivity, certHolder.getUserId()) != null;
+                    mActivity, UserHandle.of(certHolder.getUserId())) != null;
 
             // Show trust button only when it requires consumer user (non-PO/DO) to approve
             CharSequence displayText = mActivity.getText(!isProfileOrDeviceOwner && mNeedsApproval
@@ -312,13 +318,6 @@ class TrustedCredentialsDialogBuilder extends AlertDialog.Builder {
             }
 
             return certLayout;
-        }
-
-        private static int getButtonConfirmation(CertHolder certHolder) {
-            return certHolder.isSystemCert() ? ( certHolder.isDeleted()
-                        ? R.string.trusted_credentials_enable_confirmation
-                        : R.string.trusted_credentials_disable_confirmation )
-                    : R.string.trusted_credentials_remove_confirmation;
         }
 
         private static int getButtonLabel(CertHolder certHolder) {

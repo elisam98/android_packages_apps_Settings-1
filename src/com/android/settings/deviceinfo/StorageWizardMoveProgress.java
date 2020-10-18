@@ -16,6 +16,11 @@
 
 package com.android.settings.deviceinfo;
 
+import static android.content.Intent.EXTRA_TITLE;
+import static android.content.pm.PackageManager.EXTRA_MOVE_ID;
+
+import static com.android.settings.deviceinfo.StorageSettings.TAG;
+
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.MoveCallback;
 import android.os.Bundle;
@@ -25,10 +30,6 @@ import android.view.View;
 import android.widget.Toast;
 
 import com.android.settings.R;
-
-import static android.content.Intent.EXTRA_TITLE;
-import static android.content.pm.PackageManager.EXTRA_MOVE_ID;
-import static com.android.settings.deviceinfo.StorageSettings.TAG;
 
 public class StorageWizardMoveProgress extends StorageWizardBase {
     private int mMoveId;
@@ -46,12 +47,11 @@ public class StorageWizardMoveProgress extends StorageWizardBase {
         final String appName = getIntent().getStringExtra(EXTRA_TITLE);
         final String volumeName = mStorage.getBestVolumeDescription(mVolume);
 
-        setIllustrationType(ILLUSTRATION_INTERNAL);
+        setIcon(R.drawable.ic_swap_horiz);
         setHeaderText(R.string.storage_wizard_move_progress_title, appName);
         setBodyText(R.string.storage_wizard_move_progress_body, volumeName, appName);
-
-        getNextButton().setVisibility(View.GONE);
-
+        setBackButtonVisibility(View.INVISIBLE);
+        setNextButtonVisibility(View.INVISIBLE);
         // Register for updates and push through current status
         getPackageManager().registerMoveCallback(mCallback, new Handler());
         mCallback.onStatusChanged(mMoveId, getPackageManager().getMoveStatus(mMoveId), -1);
@@ -90,8 +90,6 @@ public class StorageWizardMoveProgress extends StorageWizardBase {
                 return getString(R.string.move_error_device_admin);
             case PackageManager.MOVE_FAILED_DOESNT_EXIST:
                 return getString(R.string.does_not_exist);
-            case PackageManager.MOVE_FAILED_FORWARD_LOCKED:
-                return getString(R.string.app_forward_locked);
             case PackageManager.MOVE_FAILED_INVALID_LOCATION:
                 return getString(R.string.invalid_location);
             case PackageManager.MOVE_FAILED_SYSTEM_PACKAGE:

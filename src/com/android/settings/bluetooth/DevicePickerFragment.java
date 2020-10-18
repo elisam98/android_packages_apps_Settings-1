@@ -16,6 +16,9 @@
 
 package com.android.settings.bluetooth;
 
+import static android.os.UserManager.DISALLOW_CONFIG_BLUETOOTH;
+
+import android.app.settings.SettingsEnums;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothDevicePicker;
@@ -25,69 +28,54 @@ import android.os.Bundle;
 import android.os.UserManager;
 import android.view.Menu;
 import android.view.MenuInflater;
-import android.view.MenuItem;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.annotation.VisibleForTesting;
+
 import com.android.settings.R;
 import com.android.settingslib.bluetooth.CachedBluetoothDevice;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-import static android.os.UserManager.DISALLOW_CONFIG_BLUETOOTH;
+import java.util.List;
 
 /**
  * BluetoothSettings is the Settings screen for Bluetooth configuration and
  * connection management.
  */
 public final class DevicePickerFragment extends DeviceListPreferenceFragment {
-    private static final int MENU_ID_REFRESH = Menu.FIRST;
+    private static final String KEY_BT_DEVICE_LIST = "bt_device_list";
+    private static final String TAG = "DevicePickerFragment";
+
+    @VisibleForTesting
+    BluetoothProgressCategory mAvailableDevicesCategory;
+
+    private boolean mNeedAuth;
+    private String mLaunchPackage;
+    private String mLaunchClass;
+    private boolean mScanAllowed;
 
     public DevicePickerFragment() {
         super(null /* Not tied to any user restrictions. */);
     }
 
-    private boolean mNeedAuth;
-    private String mLaunchPackage;
-    private String mLaunchClass;
-    private boolean mStartScanOnResume;
-    private boolean mDeviceSelected;
-
     @Override
-    void addPreferencesForActivity() {
-        addPreferencesFromResource(R.xml.device_picker);
-
+    void initPreferencesFromPreferenceScreen() {
         Intent intent = getActivity().getIntent();
         mNeedAuth = intent.getBooleanExtra(BluetoothDevicePicker.EXTRA_NEED_AUTH, false);
         setFilter(intent.getIntExtra(BluetoothDevicePicker.EXTRA_FILTER_TYPE,
                 BluetoothDevicePicker.FILTER_TYPE_ALL));
         mLaunchPackage = intent.getStringExtra(BluetoothDevicePicker.EXTRA_LAUNCH_PACKAGE);
         mLaunchClass = intent.getStringExtra(BluetoothDevicePicker.EXTRA_LAUNCH_CLASS);
-    }
-
-    @Override
-    void initDevicePreference(BluetoothDevicePreference preference) {
-        preference.setWidgetLayoutResource(R.layout.preference_empty_list);
+        mAvailableDevicesCategory = (BluetoothProgressCategory) findPreference(KEY_BT_DEVICE_LIST);
     }
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        menu.add(Menu.NONE, MENU_ID_REFRESH, 0, R.string.bluetooth_search_for_devices)
-                .setEnabled(true)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         super.onCreateOptionsMenu(menu, inflater);
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case MENU_ID_REFRESH:
-                mLocalAdapter.startScanning(true);
-                return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
-
-    @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.BLUETOOTH_DEVICE_PICKER;
+    public int getMetricsCategory() {
+        return SettingsEnums.BLUETOOTH_DEVICE_PICKER;
     }
 
     @Override
@@ -95,40 +83,42 @@ public final class DevicePickerFragment extends DeviceListPreferenceFragment {
         super.onCreate(savedInstanceState);
         getActivity().setTitle(getString(R.string.device_picker));
         UserManager um = (UserManager) getSystemService(Context.USER_SERVICE);
-        mStartScanOnResume = !um.hasUserRestriction(DISALLOW_CONFIG_BLUETOOTH)
-                && (savedInstanceState == null);  // don't start scan after rotation
+        mScanAllowed = !um.hasUserRestriction(DISALLOW_CONFIG_BLUETOOTH);
         setHasOptionsMenu(true);
     }
 
     @Override
-    public void onResume() {
-        super.onResume();
+    public void onStart() {
+        super.onStart();
         addCachedDevices();
-        mDeviceSelected = false;
-        if (mStartScanOnResume) {
-            mLocalAdapter.startScanning(true);
-            mStartScanOnResume = false;
+        mSelectedDevice = null;
+        if (mScanAllowed) {
+            enableScanning();
+            mAvailableDevicesCategory.setProgress(mBluetoothAdapter.isDiscovering());
         }
     }
 
     @Override
-    public void onPause() {
-        super.onPause();
+    public void onStop() {
+        // Try disable scanning no matter what, no effect if enableScanning has not been called
+        disableScanning();
+        super.onStop();
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
         /* Check if any device was selected, if no device selected
-         * send  ACTION_DEVICE_NOT_SELECTED intent, otherwise
-         * don;t do anything */
-        if (!mDeviceSelected) {
-            Intent intent = new Intent(BluetoothDevicePicker.ACTION_DEVICE_NOT_SELECTED);
-            if (mLaunchPackage != null && mLaunchClass != null) {
-                intent.setClassName(mLaunchPackage, mLaunchClass);
-            }
-            getActivity().sendBroadcast(intent);
+         * send  ACTION_DEVICE_SELECTED with a null device, otherwise
+         * don't do anything */
+        if (mSelectedDevice == null) {
+            sendDevicePickedIntent(null);
         }
     }
 
     @Override
     void onDevicePreferenceClick(BluetoothDevicePreference btPreference) {
-        mLocalAdapter.stopScanning();
+        disableScanning();
         LocalBluetoothPreferences.persistSelectedDeviceInPicker(
                 getActivity(), mSelectedDevice.getAddress());
         if ((btPreference.getCachedDevice().getBondState() ==
@@ -140,15 +130,31 @@ public final class DevicePickerFragment extends DeviceListPreferenceFragment {
         }
     }
 
+    @Override
+    public void onScanningStateChanged(boolean started) {
+        super.onScanningStateChanged(started);
+        started |= mScanEnabled;
+        mAvailableDevicesCategory.setProgress(started);
+    }
+
     public void onDeviceBondStateChanged(CachedBluetoothDevice cachedDevice,
             int bondState) {
-        if (bondState == BluetoothDevice.BOND_BONDED) {
-            BluetoothDevice device = cachedDevice.getDevice();
-            if (device.equals(mSelectedDevice)) {
-                sendDevicePickedIntent(device);
-                finish();
-            }
+        BluetoothDevice device = cachedDevice.getDevice();
+        if (!device.equals(mSelectedDevice)) {
+            return;
         }
+        if (bondState == BluetoothDevice.BOND_BONDED) {
+            sendDevicePickedIntent(device);
+            finish();
+        } else if (bondState == BluetoothDevice.BOND_NONE) {
+            enableScanning();
+        }
+    }
+
+    @Override
+    protected void initDevicePreference(BluetoothDevicePreference preference) {
+        super.initDevicePreference(preference);
+        preference.setNeedNotifyHierarchyChanged(true);
     }
 
     @Override
@@ -156,12 +162,31 @@ public final class DevicePickerFragment extends DeviceListPreferenceFragment {
         super.onBluetoothStateChanged(bluetoothState);
 
         if (bluetoothState == BluetoothAdapter.STATE_ON) {
-            mLocalAdapter.startScanning(false);
+            enableScanning();
         }
     }
 
+    @Override
+    protected String getLogTag() {
+        return TAG;
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.device_picker;
+    }
+
+    @Override
+    protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
+        return null;
+    }
+
+    @Override
+    public String getDeviceListKey() {
+        return KEY_BT_DEVICE_LIST;
+    }
+
     private void sendDevicePickedIntent(BluetoothDevice device) {
-        mDeviceSelected = true;
         Intent intent = new Intent(BluetoothDevicePicker.ACTION_DEVICE_SELECTED);
         intent.putExtra(BluetoothDevice.EXTRA_DEVICE, device);
         if (mLaunchPackage != null && mLaunchClass != null) {

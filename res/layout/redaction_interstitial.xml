@@ -15,24 +15,26 @@
     limitations under the License
 -->
 
-<com.android.setupwizardlib.GlifLayout
+<com.google.android.setupdesign.GlifLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:settings="http://schemas.android.com/apk/res-auto"
     android:id="@+id/setup_wizard_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:icon="@drawable/ic_lock"
-    settings:suwHeaderText="@string/lock_screen_notifications_interstitial_title">
+    android:icon="@drawable/ic_suggested_notifications"
+    settings:sucHeaderText="@string/lock_screen_notifications_interstitial_title">
 
     <LinearLayout
-        style="@style/SuwContentFrame"
+        style="@style/SudContentFrame"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:orientation="vertical">
 
         <TextView
-            android:id="@+id/message"
-            style="@style/SuwDescription.Glif"
+            android:id="@+id/sud_layout_description"
+            style="@style/SudDescription.Glif"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/lock_screen_notifications_interstitial_message" />
@@ -46,35 +48,33 @@
 
             <com.android.settings.RestrictedRadioButton
                 android:id="@+id/show_all"
-                style="@style/SuwRadioButton"
+                style="@style/SudRadioButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="0dp"
+                android:minHeight="?android:attr/listPreferredItemHeight"
                 android:text="@string/lock_screen_notifications_summary_show" />
 
             <com.android.settings.RestrictedRadioButton
                 android:id="@+id/redact_sensitive"
-                style="@style/SuwRadioButton"
+                style="@style/SudRadioButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="0dp"
+                android:minHeight="?android:attr/listPreferredItemHeight"
                 android:text="@string/lock_screen_notifications_summary_hide" />
 
             <RadioButton
                 android:id="@+id/hide_all"
-                style="@style/SuwRadioButton"
+                style="@style/SudRadioButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="0dp"
+                android:minHeight="?android:attr/listPreferredItemHeight"
                 android:text="@string/lock_screen_notifications_summary_disable" />
 
         </RadioGroup>
 
-        <Button
-            android:id="@+id/redaction_done_button"
-            style="@style/SetupWizardButton.Positive"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:text="@string/app_notifications_dialog_done" />
-
     </LinearLayout>
 
-</com.android.setupwizardlib.GlifLayout>
+</com.google.android.setupdesign.GlifLayout>

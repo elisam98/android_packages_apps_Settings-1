@@ -16,7 +16,6 @@
 
 package com.android.settings.users;
 
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -30,6 +29,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
+
+import androidx.appcompat.app.AlertDialog;
 
 import com.android.settings.R;
 import com.android.settings.Utils;
@@ -135,6 +136,23 @@ public final class UserDialogs {
                 .setMessage(R.string.user_enable_calling_confirm_message)
                 .setPositiveButton(R.string.okay, onConfirmListener)
                 .setNegativeButton(android.R.string.cancel, null)
+                .create();
+    }
+
+    /**
+     * Creates a dialog to confirm that the user is ok to start setting up a new user.
+     *
+     * @param onConfirmListener Callback object for positive action
+     */
+    public static Dialog createSetupUserDialog(Context context,
+            DialogInterface.OnClickListener onConfirmListener) {
+        return new AlertDialog.Builder(context)
+                .setTitle(com.android.settingslib.R.string.user_setup_dialog_title)
+                .setMessage(com.android.settingslib.R.string.user_setup_dialog_message)
+                .setPositiveButton(com.android.settingslib.R.string.user_setup_button_setup_now,
+                        onConfirmListener)
+                .setNegativeButton(com.android.settingslib.R.string.user_setup_button_setup_later,
+                        null)
                 .create();
     }
 }

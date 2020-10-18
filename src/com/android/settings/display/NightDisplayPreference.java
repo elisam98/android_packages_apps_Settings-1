@@ -15,29 +15,27 @@
 package com.android.settings.display;
 
 import android.content.Context;
+import android.hardware.display.ColorDisplayManager;
+import android.hardware.display.NightDisplayListener;
 import android.util.AttributeSet;
 
-import com.android.internal.app.NightDisplayController;
-import com.android.settings.R;
+import androidx.preference.SwitchPreference;
 
-import java.text.DateFormat;
-import java.util.Calendar;
-import java.util.TimeZone;
+import java.time.LocalTime;
 
-import cyanogenmod.preference.SelfRemovingSwitchPreference;
+public class NightDisplayPreference extends SwitchPreference
+        implements NightDisplayListener.Callback {
 
-public class NightDisplayPreference extends SelfRemovingSwitchPreference
-        implements NightDisplayController.Callback {
-
-    private NightDisplayController mController;
-    private DateFormat mTimeFormatter;
+    private ColorDisplayManager mColorDisplayManager;
+    private NightDisplayListener mNightDisplayListener;
+    private NightDisplayTimeFormatter mTimeFormatter;
 
     public NightDisplayPreference(Context context, AttributeSet attrs) {
         super(context, attrs);
 
-        mController = new NightDisplayController(context);
-        mTimeFormatter = android.text.format.DateFormat.getTimeFormat(context);
-        mTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+        mColorDisplayManager = context.getSystemService(ColorDisplayManager.class);
+        mNightDisplayListener = new NightDisplayListener(context);
+        mTimeFormatter = new NightDisplayTimeFormatter(context);
     }
 
     @Override
@@ -45,7 +43,7 @@ public class NightDisplayPreference extends SelfRemovingSwitchPreference
         super.onAttached();
 
         // Listen for changes only while attached.
-        mController.setListener(this);
+        mNightDisplayListener.setCallback(this);
 
         // Update the summary since the state may have changed while not attached.
         updateSummary();
@@ -56,54 +54,7 @@ public class NightDisplayPreference extends SelfRemovingSwitchPreference
         super.onDetached();
 
         // Stop listening for state changes.
-        mController.setListener(null);
-    }
-
-    private String getFormattedTimeString(NightDisplayController.LocalTime localTime) {
-        final Calendar c = Calendar.getInstance();
-        c.setTimeZone(mTimeFormatter.getTimeZone());
-        c.set(Calendar.HOUR_OF_DAY, localTime.hourOfDay);
-        c.set(Calendar.MINUTE, localTime.minute);
-        c.set(Calendar.SECOND, 0);
-        c.set(Calendar.MILLISECOND, 0);
-        return mTimeFormatter.format(c.getTime());
-    }
-
-    private void updateSummary() {
-        final Context context = getContext();
-
-        final boolean isActivated = mController.isActivated();
-        final int autoMode = mController.getAutoMode();
-
-        final String autoModeSummary;
-        switch (autoMode) {
-            default:
-            case NightDisplayController.AUTO_MODE_DISABLED:
-                autoModeSummary = context.getString(isActivated
-                        ? R.string.night_display_summary_on_auto_mode_never
-                        : R.string.night_display_summary_off_auto_mode_never);
-                break;
-            case NightDisplayController.AUTO_MODE_CUSTOM:
-                if (isActivated) {
-                    autoModeSummary = context.getString(
-                            R.string.night_display_summary_on_auto_mode_custom,
-                            getFormattedTimeString(mController.getCustomEndTime()));
-                } else {
-                    autoModeSummary = context.getString(
-                            R.string.night_display_summary_off_auto_mode_custom,
-                            getFormattedTimeString(mController.getCustomStartTime()));
-                }
-                break;
-            case NightDisplayController.AUTO_MODE_TWILIGHT:
-                autoModeSummary = context.getString(isActivated
-                        ? R.string.night_display_summary_on_auto_mode_twilight
-                        : R.string.night_display_summary_off_auto_mode_twilight);
-                break;
-        }
-
-        final int summaryFormatResId = isActivated ? R.string.night_display_summary_on
-                : R.string.night_display_summary_off;
-        setSummary(context.getString(summaryFormatResId, autoModeSummary));
+        mNightDisplayListener.setCallback(null);
     }
 
     @Override
@@ -117,12 +68,16 @@ public class NightDisplayPreference extends SelfRemovingSwitchPreference
     }
 
     @Override
-    public void onCustomStartTimeChanged(NightDisplayController.LocalTime startTime) {
+    public void onCustomStartTimeChanged(LocalTime startTime) {
         updateSummary();
     }
 
     @Override
-    public void onCustomEndTimeChanged(NightDisplayController.LocalTime endTime) {
+    public void onCustomEndTimeChanged(LocalTime endTime) {
         updateSummary();
+    }
+
+    private void updateSummary() {
+        setSummary(mTimeFormatter.getAutoModeTimeSummary(getContext(), mColorDisplayManager));
     }
 }

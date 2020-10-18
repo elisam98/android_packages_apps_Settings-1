@@ -29,6 +29,8 @@ import android.util.ArrayMap;
 import android.util.Log;
 import android.util.SparseArray;
 
+import androidx.annotation.VisibleForTesting;
+
 import com.android.settingslib.applications.ApplicationsState;
 import com.android.settingslib.applications.ApplicationsState.AppEntry;
 
@@ -56,13 +58,32 @@ public abstract class AppStateAppOpsBridge extends AppStateBaseBridge {
 
     public AppStateAppOpsBridge(Context context, ApplicationsState appState, Callback callback,
             int appOpsOpCode, String[] permissions) {
+        this(context, appState, callback, appOpsOpCode, permissions,
+                AppGlobals.getPackageManager());
+    }
+
+    AppStateAppOpsBridge(Context context, ApplicationsState appState, Callback callback,
+            int[] appOpsOpCodes, String[] permissions) {
+        this(context, appState, callback, appOpsOpCodes, permissions,
+                AppGlobals.getPackageManager());
+    }
+
+    @VisibleForTesting
+    AppStateAppOpsBridge(Context context, ApplicationsState appState, Callback callback,
+            int appOpsOpCode, String[] permissions, IPackageManager packageManager) {
+        this(context, appState, callback, new int[]{appOpsOpCode}, permissions,
+                packageManager);
+    }
+
+    AppStateAppOpsBridge(Context context, ApplicationsState appState, Callback callback,
+            int[] appOpsOpCodes, String[] permissions, IPackageManager packageManager) {
         super(appState, callback);
         mContext = context;
-        mIPackageManager = AppGlobals.getPackageManager();
+        mIPackageManager = packageManager;
         mUserManager = UserManager.get(context);
         mProfiles = mUserManager.getUserProfiles();
         mAppOpsManager = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
-        mAppOpsOpCodes = new int[] {appOpsOpCode};
+        mAppOpsOpCodes = appOpsOpCodes;
         mPermissions = permissions;
     }
 
@@ -92,18 +113,21 @@ public abstract class AppStateAppOpsBridge extends AppStateBaseBridge {
                 .getUserId(uid)));
         try {
             permissionState.packageInfo = mIPackageManager.getPackageInfo(pkg,
-                    PackageManager.GET_PERMISSIONS | PackageManager.MATCH_UNINSTALLED_PACKAGES,
+                    PackageManager.GET_PERMISSIONS | PackageManager.MATCH_ANY_USER,
                     permissionState.userHandle.getIdentifier());
-            // Check static permission state (whatever that is declared in package manifest)
-            String[] requestedPermissions = permissionState.packageInfo.requestedPermissions;
-            int[] permissionFlags = permissionState.packageInfo.requestedPermissionsFlags;
-            if (requestedPermissions != null) {
-                for (int i = 0; i < requestedPermissions.length; i++) {
-                    if (doesAnyPermissionMatch(requestedPermissions[i], mPermissions)) {
-                        permissionState.permissionDeclared = true;
-                        if ((permissionFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0) {
-                            permissionState.staticPermissionGranted = true;
-                            break;
+            if (permissionState.packageInfo != null) {
+                // Check static permission state (whatever that is declared in package manifest)
+                String[] requestedPermissions = permissionState.packageInfo.requestedPermissions;
+                int[] permissionFlags = permissionState.packageInfo.requestedPermissionsFlags;
+                if (requestedPermissions != null) {
+                    for (int i = 0; i < requestedPermissions.length; i++) {
+                        if (doesAnyPermissionMatch(requestedPermissions[i], mPermissions)) {
+                            permissionState.permissionDeclared = true;
+                            if ((permissionFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED)
+                                    != 0) {
+                                permissionState.staticPermissionGranted = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -133,8 +157,12 @@ public abstract class AppStateAppOpsBridge extends AppStateBaseBridge {
         for (int i = 0; i < N; i++) {
             AppEntry app = apps.get(i);
             int userId = UserHandle.getUserId(app.info.uid);
-            ArrayMap<String, PermissionState> userMap = entries.get(userId);
-            app.extraInfo = userMap != null ? userMap.get(app.info.packageName) : null;
+            if (entries != null) {
+                ArrayMap<String, PermissionState> userMap = entries.get(userId);
+                app.extraInfo = userMap != null ? userMap.get(app.info.packageName) : null;
+            } else {
+                app.extraInfo = null;
+            }
         }
     }
 
@@ -199,9 +227,10 @@ public abstract class AppStateAppOpsBridge extends AppStateBaseBridge {
                 if (entriesForProfile == null) {
                     continue;
                 }
-                @SuppressWarnings("unchecked")
-                final List<PackageInfo> packageInfos = mIPackageManager
-                        .getPackagesHoldingPermissions(mPermissions, 0, profileId).getList();
+                @SuppressWarnings("unchecked") final List<PackageInfo> packageInfos =
+                        mIPackageManager
+                                .getPackagesHoldingPermissions(mPermissions, 0,
+                                        profileId).getList();
                 final int packageInfoCount = packageInfos != null ? packageInfos.size() : 0;
                 for (int i = 0; i < packageInfoCount; i++) {
                     final PackageInfo packageInfo = packageInfos.get(i);
@@ -224,6 +253,10 @@ public abstract class AppStateAppOpsBridge extends AppStateBaseBridge {
      * a particular package.
      */
     private void loadAppOpsStates(SparseArray<ArrayMap<String, PermissionState>> entries) {
+        if (entries == null) {
+            return;
+        }
+
         // Find out which packages have been granted permission from AppOps.
         final List<AppOpsManager.PackageOps> packageOps = mAppOpsManager.getPackagesForOps(
                 mAppOpsOpCodes);
@@ -315,7 +348,7 @@ public abstract class AppStateAppOpsBridge extends AppStateBaseBridge {
         public boolean isPermissible() {
             // defining the default behavior as permissible as long as the package requested this
             // permission (this means pre-M gets approval during install time; M apps gets approval
-            // during runtime.
+            // during runtime).
             if (appOpMode == AppOpsManager.MODE_DEFAULT) {
                 return staticPermissionGranted;
             }

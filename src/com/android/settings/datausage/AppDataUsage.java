@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
  * except in compliance with the License. You may obtain a copy of the License at
@@ -14,62 +14,56 @@
 
 package com.android.settings.datausage;
 
-import android.app.LoaderManager;
+import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
+
+import android.app.Activity;
+import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
-import android.content.Loader;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.UserInfo;
 import android.graphics.drawable.Drawable;
-import android.net.INetworkStatsSession;
-import android.net.NetworkPolicy;
-import android.net.NetworkPolicyManager;
-import android.net.NetworkStatsHistory;
 import android.net.NetworkTemplate;
-import android.net.TrafficStats;
-import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.Process;
-import android.os.RemoteException;
 import android.os.UserHandle;
-import android.os.UserManager;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceCategory;
-import android.text.format.Formatter;
+import android.telephony.SubscriptionManager;
 import android.util.ArraySet;
+import android.util.IconDrawableFactory;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.settings.AppHeader;
+
+import androidx.annotation.VisibleForTesting;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.PreferenceCategory;
+
 import com.android.settings.R;
 import com.android.settings.applications.AppInfoBase;
+import com.android.settings.widget.EntityHeaderController;
 import com.android.settingslib.AppItem;
-import com.android.settingslib.Utils;
-import com.android.settingslib.net.ChartData;
-import com.android.settingslib.net.ChartDataLoader;
+import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+import com.android.settingslib.RestrictedLockUtilsInternal;
+import com.android.settingslib.RestrictedSwitchPreference;
+import com.android.settingslib.net.NetworkCycleDataForUid;
+import com.android.settingslib.net.NetworkCycleDataForUidLoader;
+import com.android.settingslib.net.UidDetail;
 import com.android.settingslib.net.UidDetailProvider;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
 
-import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
-import static android.net.NetworkPolicyManager.POLICY_REJECT_ON_DATA;
-import static android.net.NetworkPolicyManager.POLICY_REJECT_ON_WIFI;
-import static android.net.NetworkPolicyManager.POLICY_REJECT_ON_VPN;
-
-public class AppDataUsage extends DataUsageBase implements Preference.OnPreferenceChangeListener,
+public class AppDataUsage extends DataUsageBaseFragment implements OnPreferenceChangeListener,
         DataSaverBackend.Listener {
 
     private static final String TAG = "AppDataUsage";
 
-    public static final String ARG_APP_ITEM = "app_item";
-    public static final String ARG_NETWORK_TEMPLATE = "network_template";
+    static final String ARG_APP_ITEM = "app_item";
+    static final String ARG_NETWORK_TEMPLATE = "network_template";
+    static final String ARG_NETWORK_CYCLES = "network_cycles";
+    static final String ARG_SELECTED_CYCLE = "selected_cycle";
 
     private static final String KEY_TOTAL_USAGE = "total_usage";
     private static final String KEY_FOREGROUND_USAGE = "foreground_usage";
@@ -79,67 +73,55 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
     private static final String KEY_APP_LIST = "app_list";
     private static final String KEY_CYCLE = "cycle";
     private static final String KEY_UNRESTRICTED_DATA = "unrestricted_data_saver";
-    private static final String KEY_RESTRICT_ALL_DATA = "restrict_all_data";
-    private static final String KEY_RESTRICT_ALL_WIFI = "restrict_all_wifi";
-    private static final String KEY_RESTRICT_ALL_VPN = "restrict_all_vpn";
 
-    private static final int LOADER_CHART_DATA = 2;
+    private static final int LOADER_APP_USAGE_DATA = 2;
+    private static final int LOADER_APP_PREF = 3;
 
+    private PackageManager mPackageManager;
     private final ArraySet<String> mPackages = new ArraySet<>();
     private Preference mTotalUsage;
     private Preference mForegroundUsage;
     private Preference mBackgroundUsage;
     private Preference mAppSettings;
-    private SwitchPreference mRestrictBackground;
-    private SwitchPreference mRestrictAllData;
-    private SwitchPreference mRestrictAllWifi;
-    private SwitchPreference mRestrictAllVpn;
+    private RestrictedSwitchPreference mRestrictBackground;
     private PreferenceCategory mAppList;
 
     private Drawable mIcon;
-    private CharSequence mLabel;
-    private String mPackageName;
-    private INetworkStatsSession mStatsSession;
+    @VisibleForTesting
+    CharSequence mLabel;
+    @VisibleForTesting
+    String mPackageName;
     private CycleAdapter mCycleAdapter;
 
-    private long mStart;
-    private long mEnd;
-    private ChartData mChartData;
-    private NetworkTemplate mTemplate;
-    private NetworkPolicy mPolicy;
-    private NetworkPolicyManager mPolicyManager;
+    private List<NetworkCycleDataForUid> mUsageData;
+    @VisibleForTesting
+    NetworkTemplate mTemplate;
     private AppItem mAppItem;
     private Intent mAppSettingsIntent;
     private SpinnerPreference mCycle;
-    private SwitchPreference mUnrestrictedData;
+    private RestrictedSwitchPreference mUnrestrictedData;
     private DataSaverBackend mDataSaverBackend;
-
-    // Parameters to construct an efficient ThreadPoolExecutor
-    private static final int CPU_COUNT = Runtime.getRuntime().availableProcessors();
-    private static final int CORE_POOL_SIZE = Math.max(2, Math.min(CPU_COUNT - 1, 4));
-    private static final int MAXIMUM_POOL_SIZE = CPU_COUNT * 2 + 1;
-    private static final int KEEP_ALIVE_SECONDS = 30;
+    private Context mContext;
+    private ArrayList<Long> mCycles;
+    private long mSelectedCycle;
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        mContext = getContext();
+        mPackageManager = getPackageManager();
         final Bundle args = getArguments();
-
-        try {
-            mStatsSession = services.mStatsService.openSession();
-        } catch (RemoteException e) {
-            throw new RuntimeException(e);
-        }
 
         mAppItem = (args != null) ? (AppItem) args.getParcelable(ARG_APP_ITEM) : null;
         mTemplate = (args != null) ? (NetworkTemplate) args.getParcelable(ARG_NETWORK_TEMPLATE)
                 : null;
-        mPolicyManager = NetworkPolicyManager.from(getActivity());
+        mCycles = (args != null) ? (ArrayList) args.getSerializable(ARG_NETWORK_CYCLES)
+            : null;
+        mSelectedCycle = (args != null) ? args.getLong(ARG_SELECTED_CYCLE) : 0L;
 
         if (mTemplate == null) {
-            Context context = getContext();
-            mTemplate = DataUsageSummary.getDefaultTemplate(context,
-                    DataUsageSummary.getDefaultSubscriptionId(context));
+            mTemplate = DataUsageUtils.getDefaultTemplate(mContext,
+                    SubscriptionManager.getDefaultDataSubscriptionId());
         }
         if (mAppItem == null) {
             int uid = (args != null) ? args.getInt(AppInfoBase.ARG_PACKAGE_UID, -1)
@@ -157,51 +139,46 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
                 addUid(mAppItem.uids.keyAt(i));
             }
         }
-        addPreferencesFromResource(R.xml.app_data_usage);
 
         mTotalUsage = findPreference(KEY_TOTAL_USAGE);
         mForegroundUsage = findPreference(KEY_FOREGROUND_USAGE);
         mBackgroundUsage = findPreference(KEY_BACKGROUND_USAGE);
 
-        mCycle = (SpinnerPreference) findPreference(KEY_CYCLE);
-        mCycleAdapter = new CycleAdapter(getContext(), mCycle, mCycleListener, false);
+        mCycle = findPreference(KEY_CYCLE);
+        mCycleAdapter = new CycleAdapter(mContext, mCycle, mCycleListener);
+
+        final UidDetailProvider uidDetailProvider = getUidDetailProvider();
 
         if (mAppItem.key > 0) {
-            if (mPackages.size() != 0) {
-                PackageManager pm = getPackageManager();
-                try {
-                    ApplicationInfo info = pm.getApplicationInfo(mPackages.valueAt(0), 0);
-                    mIcon = info.loadIcon(pm);
-                    mLabel = info.loadLabel(pm);
-                    mPackageName = info.packageName;
-                } catch (PackageManager.NameNotFoundException e) {
-                }
-            }
             if (!UserHandle.isApp(mAppItem.key)) {
+                final UidDetail uidDetail = uidDetailProvider.getUidDetail(mAppItem.key, true);
+                mIcon = uidDetail.icon;
+                mLabel = uidDetail.label;
                 removePreference(KEY_UNRESTRICTED_DATA);
                 removePreference(KEY_RESTRICT_BACKGROUND);
-                removePreference(KEY_RESTRICT_ALL_DATA);
-                removePreference(KEY_RESTRICT_ALL_WIFI);
-                removePreference(KEY_RESTRICT_ALL_VPN);
             } else {
-                mRestrictBackground = (SwitchPreference) findPreference(KEY_RESTRICT_BACKGROUND);
+                if (mPackages.size() != 0) {
+                    try {
+                        final ApplicationInfo info = mPackageManager.getApplicationInfoAsUser(
+                            mPackages.valueAt(0), 0, UserHandle.getUserId(mAppItem.key));
+                        mIcon = IconDrawableFactory.newInstance(getActivity()).getBadgedIcon(info);
+                        mLabel = info.loadLabel(mPackageManager);
+                        mPackageName = info.packageName;
+                    } catch (PackageManager.NameNotFoundException e) {
+                    }
+                }
+                mRestrictBackground = findPreference(KEY_RESTRICT_BACKGROUND);
                 mRestrictBackground.setOnPreferenceChangeListener(this);
-                mUnrestrictedData = (SwitchPreference) findPreference(KEY_UNRESTRICTED_DATA);
+                mUnrestrictedData = findPreference(KEY_UNRESTRICTED_DATA);
                 mUnrestrictedData.setOnPreferenceChangeListener(this);
-                mRestrictAllData = (SwitchPreference) findPreference(KEY_RESTRICT_ALL_DATA);
-                mRestrictAllData.setOnPreferenceChangeListener(this);
-                mRestrictAllWifi = (SwitchPreference) findPreference(KEY_RESTRICT_ALL_WIFI);
-                mRestrictAllWifi.setOnPreferenceChangeListener(this);
-                mRestrictAllVpn = (SwitchPreference) findPreference(KEY_RESTRICT_ALL_VPN);
-                mRestrictAllVpn.setOnPreferenceChangeListener(this);
             }
-            mDataSaverBackend = new DataSaverBackend(getContext());
+            mDataSaverBackend = new DataSaverBackend(mContext);
             mAppSettings = findPreference(KEY_APP_SETTINGS);
 
             mAppSettingsIntent = new Intent(Intent.ACTION_MANAGE_NETWORK_USAGE);
             mAppSettingsIntent.addCategory(Intent.CATEGORY_DEFAULT);
 
-            PackageManager pm = getPackageManager();
+            final PackageManager pm = getPackageManager();
             boolean matchFound = false;
             for (String packageName : mPackages) {
                 mAppSettingsIntent.setPackage(packageName);
@@ -216,46 +193,24 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
             }
 
             if (mPackages.size() > 1) {
-                mAppList = (PreferenceCategory) findPreference(KEY_APP_LIST);
-                final int packageSize = mPackages.size();
-                final BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(packageSize);
-                final ThreadPoolExecutor executor = new ThreadPoolExecutor(CORE_POOL_SIZE,
-                        MAXIMUM_POOL_SIZE, KEEP_ALIVE_SECONDS, TimeUnit.SECONDS, workQueue);
-                for (int i = 1; i < mPackages.size(); i++) {
-                    final AppPrefLoader loader = new AppPrefLoader();
-                        loader.executeOnExecutor(executor, mPackages.valueAt(i));
-                }
+                mAppList = findPreference(KEY_APP_LIST);
+                LoaderManager.getInstance(this).restartLoader(LOADER_APP_PREF, Bundle.EMPTY,
+                        mAppPrefCallbacks);
             } else {
                 removePreference(KEY_APP_LIST);
             }
         } else {
-            if (mAppItem.key == TrafficStats.UID_REMOVED) {
-                mLabel = getContext().getString(R.string.data_usage_uninstalled_apps_users);
-            } else if (mAppItem.key == TrafficStats.UID_TETHERING) {
-                mLabel = getContext().getString(R.string.tether_settings_title_all);
-            } else {
-                final int userId = UidDetailProvider.getUserIdForKey(mAppItem.key);
-                final UserManager um = UserManager.get(getActivity());
-                final UserInfo info = um.getUserInfo(userId);
-                final PackageManager pm = getPackageManager();
-                mIcon = Utils.getUserIcon(getActivity(), um, info);
-                mLabel = Utils.getUserLabel(getActivity(), info);
-                mPackageName = getActivity().getPackageName();
-            }
+            final Context context = getActivity();
+            final UidDetail uidDetail = uidDetailProvider.getUidDetail(mAppItem.key, true);
+            mIcon = uidDetail.icon;
+            mLabel = uidDetail.label;
+            mPackageName = context.getPackageName();
+
             removePreference(KEY_UNRESTRICTED_DATA);
             removePreference(KEY_APP_SETTINGS);
             removePreference(KEY_RESTRICT_BACKGROUND);
             removePreference(KEY_APP_LIST);
-            removePreference(KEY_RESTRICT_ALL_DATA);
-            removePreference(KEY_RESTRICT_ALL_WIFI);
-            removePreference(KEY_RESTRICT_ALL_VPN);
         }
-    }
-
-    @Override
-    public void onDestroy() {
-        TrafficStats.closeQuietly(mStatsSession);
-        super.onDestroy();
     }
 
     @Override
@@ -264,9 +219,8 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
         if (mDataSaverBackend != null) {
             mDataSaverBackend.addListener(this);
         }
-        mPolicy = services.mPolicyEditor.getPolicy(mTemplate);
-        getLoaderManager().restartLoader(LOADER_CHART_DATA,
-                ChartDataLoader.buildArgs(mTemplate, mAppItem), mChartDataCallbacks);
+        LoaderManager.getInstance(this).restartLoader(LOADER_APP_USAGE_DATA, null /* args */,
+                mUidDataCallbacks);
         updatePrefs();
     }
 
@@ -280,23 +234,12 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
 
     @Override
     public boolean onPreferenceChange(Preference preference, Object newValue) {
-        if (com.android.settings.Utils.isMonkeyRunning()) {
-            return false;
-        }
         if (preference == mRestrictBackground) {
             mDataSaverBackend.setIsBlacklisted(mAppItem.key, mPackageName, !(Boolean) newValue);
+            updatePrefs();
             return true;
         } else if (preference == mUnrestrictedData) {
             mDataSaverBackend.setIsWhitelisted(mAppItem.key, mPackageName, (Boolean) newValue);
-            return true;
-        } else if (preference == mRestrictAllData) {
-            setAppRestrictAllData((boolean) newValue);
-            return true;
-        } else if (preference == mRestrictAllWifi) {
-            setAppRestrictAllWifi((boolean) newValue);
-            return true;
-        } else if (preference == mRestrictAllVpn) {
-            setAppRestrictAllVpn((boolean) newValue);
             return true;
         }
         return false;
@@ -313,45 +256,46 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
         return super.onPreferenceTreeClick(preference);
     }
 
-    private void updatePrefs() {
-        updatePrefs(getAppRestrictBackground(), getUnrestrictData(), getAppRestrictAllData(),
-                    getAppRestrictAllVpn(), getAppRestrictAllWifi());
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.app_data_usage;
     }
 
-    private void updatePrefs(boolean restrictBackground, boolean unrestrictData,
-            boolean restrictAllData, boolean restrictAllVpn, boolean restrictAllWifi) {
+    @Override
+    protected String getLogTag() {
+        return TAG;
+    }
+
+    @VisibleForTesting
+    void updatePrefs() {
+        updatePrefs(getAppRestrictBackground(), getUnrestrictData());
+    }
+
+    @VisibleForTesting
+    UidDetailProvider getUidDetailProvider() {
+        return new UidDetailProvider(mContext);
+    }
+
+    private void updatePrefs(boolean restrictBackground, boolean unrestrictData) {
+        final EnforcedAdmin admin = RestrictedLockUtilsInternal.checkIfMeteredDataRestricted(
+                mContext, mPackageName, UserHandle.getUserId(mAppItem.key));
         if (mRestrictBackground != null) {
-            if (restrictAllData) {
-                mRestrictBackground.setEnabled(false);
-                mRestrictBackground.setChecked(false);
-            } else {
-                mRestrictBackground.setEnabled(true);
-                mRestrictBackground.setChecked(!restrictBackground);
-            }
+            mRestrictBackground.setChecked(!restrictBackground);
+            mRestrictBackground.setDisabledByAdmin(admin);
         }
         if (mUnrestrictedData != null) {
-            if (restrictAllData || restrictBackground) {
-                mUnrestrictedData.setEnabled(false);
-                mUnrestrictedData.setChecked(false);
+            if (restrictBackground) {
+                mUnrestrictedData.setVisible(false);
             } else {
-                mUnrestrictedData.setEnabled(true);
+                mUnrestrictedData.setVisible(true);
                 mUnrestrictedData.setChecked(unrestrictData);
+                mUnrestrictedData.setDisabledByAdmin(admin);
             }
-        }
-
-        if (mRestrictAllData != null) {
-            mRestrictAllData.setChecked(restrictAllData);
-        }
-        if (mRestrictAllWifi != null) {
-            mRestrictAllWifi.setChecked(restrictAllWifi);
-        }
-        if (mRestrictAllVpn != null) {
-            mRestrictAllVpn.setChecked(restrictAllVpn);
         }
     }
 
     private void addUid(int uid) {
-        String[] packages = getPackageManager().getPackagesForUid(uid);
+        String[] packages = mPackageManager.getPackagesForUid(uid);
         if (packages != null) {
             for (int i = 0; i < packages.length; i++) {
                 mPackages.add(packages[i]);
@@ -359,30 +303,29 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
         }
     }
 
-    private void bindData() {
+    @VisibleForTesting
+    void bindData(int position) {
         final long backgroundBytes, foregroundBytes;
-        if (mChartData == null || mStart == 0) {
+        if (mUsageData == null || position >= mUsageData.size()) {
             backgroundBytes = foregroundBytes = 0;
             mCycle.setVisible(false);
         } else {
             mCycle.setVisible(true);
-            final long now = System.currentTimeMillis();
-            NetworkStatsHistory.Entry entry = null;
-            entry = mChartData.detailDefault.getValues(mStart, mEnd, now, entry);
-            backgroundBytes = entry.rxBytes + entry.txBytes;
-            entry = mChartData.detailForeground.getValues(mStart, mEnd, now, entry);
-            foregroundBytes = entry.rxBytes + entry.txBytes;
+            final NetworkCycleDataForUid data = mUsageData.get(position);
+            backgroundBytes = data.getBackgroudUsage();
+            foregroundBytes = data.getForegroudUsage();
         }
         final long totalBytes = backgroundBytes + foregroundBytes;
-        final Context context = getContext();
 
-        mTotalUsage.setSummary(Formatter.formatFileSize(context, totalBytes));
-        mForegroundUsage.setSummary(Formatter.formatFileSize(context, foregroundBytes));
-        mBackgroundUsage.setSummary(Formatter.formatFileSize(context, backgroundBytes));
+        mTotalUsage.setSummary(DataUsageUtils.formatDataUsage(mContext, totalBytes));
+        mForegroundUsage.setSummary(DataUsageUtils.formatDataUsage(mContext, foregroundBytes));
+        mBackgroundUsage.setSummary(DataUsageUtils.formatDataUsage(mContext, backgroundBytes));
     }
 
     private boolean getAppRestrictBackground() {
-        return getAppRestriction(POLICY_REJECT_METERED_BACKGROUND);
+        final int uid = mAppItem.key;
+        final int uidPolicy = services.mPolicyManager.getUidPolicy(uid);
+        return (uidPolicy & POLICY_REJECT_METERED_BACKGROUND) != 0;
     }
 
     private boolean getUnrestrictData() {
@@ -392,74 +335,48 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
         return false;
     }
 
-    private boolean getAppRestrictAllData() {
-        return getAppRestriction(POLICY_REJECT_ON_DATA);
-    }
-
-    private boolean getAppRestrictAllWifi() {
-        return getAppRestriction(POLICY_REJECT_ON_WIFI);
-    }
-
-    private boolean getAppRestrictAllVpn() {
-        return getAppRestriction(POLICY_REJECT_ON_VPN);
-    }
-
-    private boolean getAppRestriction(int policy) {
-        final int uid = mAppItem.key;
-        final int uidPolicy = services.mPolicyManager.getUidPolicy(uid);
-        return (uidPolicy & policy) != 0;
-    }
-
-    private void setAppRestrictAllData(boolean restrict) {
-        setAppRestriction(POLICY_REJECT_ON_DATA, restrict);
-    }
-
-    private void setAppRestrictAllWifi(boolean restrict) {
-        setAppRestriction(POLICY_REJECT_ON_WIFI, restrict);
-    }
-
-    private void setAppRestrictAllVpn(boolean restrict) {
-        setAppRestriction(POLICY_REJECT_ON_VPN, restrict);
-    }
-
-    private void setAppRestriction(int policy, boolean restrict) {
-        final int uid = mAppItem.key;
-        if (restrict) {
-            mPolicyManager.addUidPolicy(uid, policy);
-        } else {
-            mPolicyManager.removeUidPolicy(uid, policy);
-        }
-    }
-
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        View header = setPinnedHeaderView(R.layout.app_header);
         String pkg = mPackages.size() != 0 ? mPackages.valueAt(0) : null;
         int uid = 0;
-        try {
-            uid = pkg != null ? getPackageManager().getPackageUid(pkg, 0) : 0;
-        } catch (PackageManager.NameNotFoundException e) {
+        if (pkg != null) {
+            try {
+                uid = mPackageManager.getPackageUidAsUser(pkg,
+                        UserHandle.getUserId(mAppItem.key));
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.w(TAG, "Skipping UID because cannot find package " + pkg);
+            }
         }
-        AppHeader.setupHeaderView(getActivity(), mIcon, mLabel,
-                pkg, uid, AppHeader.includeAppInfo(this), 0, header, null);
+
+        final boolean showInfoButton = mAppItem.key > 0;
+
+        final Activity activity = getActivity();
+        final Preference pref = EntityHeaderController
+                .newInstance(activity, this, null /* header */)
+                .setRecyclerView(getListView(), getSettingsLifecycle())
+                .setUid(uid)
+                .setHasAppInfoLink(showInfoButton)
+                .setButtonActions(EntityHeaderController.ActionType.ACTION_NONE,
+                        EntityHeaderController.ActionType.ACTION_NONE)
+                .setIcon(mIcon)
+                .setLabel(mLabel)
+                .setPackageName(pkg)
+                .done(activity, getPrefContext());
+        getPreferenceScreen().addPreference(pref);
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.APP_DATA_USAGE;
+    public int getMetricsCategory() {
+        return SettingsEnums.APP_DATA_USAGE;
     }
 
     private AdapterView.OnItemSelectedListener mCycleListener =
             new AdapterView.OnItemSelectedListener() {
         @Override
         public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-            final CycleAdapter.CycleItem cycle = (CycleAdapter.CycleItem) mCycle.getSelectedItem();
-
-            mStart = cycle.start;
-            mEnd = cycle.end;
-            bindData();
+            bindData(position);
         }
 
         @Override
@@ -468,49 +385,78 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
         }
     };
 
-    private final LoaderManager.LoaderCallbacks<ChartData> mChartDataCallbacks =
-            new LoaderManager.LoaderCallbacks<ChartData>() {
-        @Override
-        public Loader<ChartData> onCreateLoader(int id, Bundle args) {
-            return new ChartDataLoader(getActivity(), mStatsSession, args);
-        }
-
-        @Override
-        public void onLoadFinished(Loader<ChartData> loader, ChartData data) {
-            mChartData = data;
-            mCycleAdapter.updateCycleList(mPolicy, mChartData);
-            bindData();
-        }
-
-        @Override
-        public void onLoaderReset(Loader<ChartData> loader) {
-        }
-    };
-
-    private class AppPrefLoader extends AsyncTask<String, Void, Preference> {
-        @Override
-        protected Preference doInBackground(String... params) {
-            PackageManager pm = getPackageManager();
-            String pkg = params[0];
-            try {
-                ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-                Preference preference = new Preference(getPrefContext());
-                preference.setIcon(info.loadIcon(pm));
-                preference.setTitle(info.loadLabel(pm));
-                preference.setSelectable(false);
-                return preference;
-            } catch (PackageManager.NameNotFoundException e) {
+    @VisibleForTesting
+    final LoaderManager.LoaderCallbacks<List<NetworkCycleDataForUid>> mUidDataCallbacks =
+        new LoaderManager.LoaderCallbacks<List<NetworkCycleDataForUid>>() {
+            @Override
+            public Loader<List<NetworkCycleDataForUid>> onCreateLoader(int id, Bundle args) {
+                final NetworkCycleDataForUidLoader.Builder builder
+                    = NetworkCycleDataForUidLoader.builder(mContext);
+                builder.setRetrieveDetail(true)
+                    .setNetworkTemplate(mTemplate);
+                if (mAppItem.category == AppItem.CATEGORY_USER) {
+                    for (int i = 0; i < mAppItem.uids.size(); i++) {
+                        builder.addUid(mAppItem.uids.keyAt(i));
+                    }
+                } else {
+                    builder.addUid(mAppItem.key);
+                }
+                if (mCycles != null) {
+                    builder.setCycles(mCycles);
+                }
+                return builder.build();
             }
-            return null;
-        }
 
-        @Override
-        protected void onPostExecute(Preference pref) {
-            if (pref != null && mAppList != null) {
-                mAppList.addPreference(pref);
+            @Override
+            public void onLoadFinished(Loader<List<NetworkCycleDataForUid>> loader,
+                    List<NetworkCycleDataForUid> data) {
+                mUsageData = data;
+                mCycleAdapter.updateCycleList(data);
+                if (mSelectedCycle > 0L) {
+                    final int numCycles = data.size();
+                    int position = 0;
+                    for (int i = 0; i < numCycles; i++) {
+                        final NetworkCycleDataForUid cycleData = data.get(i);
+                        if (cycleData.getEndTime() == mSelectedCycle) {
+                            position = i;
+                            break;
+                        }
+                    }
+                    if (position > 0) {
+                        mCycle.setSelection(position);
+                    }
+                    bindData(position);
+                } else {
+                    bindData(0 /* position */);
+                }
             }
-        }
-    }
+
+            @Override
+            public void onLoaderReset(Loader<List<NetworkCycleDataForUid>> loader) {
+            }
+        };
+
+    private final LoaderManager.LoaderCallbacks<ArraySet<Preference>> mAppPrefCallbacks =
+        new LoaderManager.LoaderCallbacks<ArraySet<Preference>>() {
+            @Override
+            public Loader<ArraySet<Preference>> onCreateLoader(int i, Bundle bundle) {
+                return new AppPrefLoader(getPrefContext(), mPackages, getPackageManager());
+            }
+
+            @Override
+            public void onLoadFinished(Loader<ArraySet<Preference>> loader,
+                    ArraySet<Preference> preferences) {
+                if (preferences != null && mAppList != null) {
+                    for (Preference preference : preferences) {
+                        mAppList.addPreference(preference);
+                    }
+                }
+            }
+
+            @Override
+            public void onLoaderReset(Loader<ArraySet<Preference>> loader) {
+            }
+        };
 
     @Override
     public void onDataSaverChanged(boolean isDataSaving) {
@@ -520,16 +466,14 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
     @Override
     public void onWhitelistStatusChanged(int uid, boolean isWhitelisted) {
         if (mAppItem.uids.get(uid, false)) {
-            updatePrefs(getAppRestrictBackground(), isWhitelisted,
-                    getAppRestrictAllData(), getAppRestrictAllVpn(), getAppRestrictAllWifi());
+            updatePrefs(getAppRestrictBackground(), isWhitelisted);
         }
     }
 
     @Override
     public void onBlacklistStatusChanged(int uid, boolean isBlacklisted) {
         if (mAppItem.uids.get(uid, false)) {
-            updatePrefs(isBlacklisted, getUnrestrictData(),
-                    getAppRestrictAllData(), getAppRestrictAllVpn(), getAppRestrictAllWifi());
+            updatePrefs(isBlacklisted, getUnrestrictData());
         }
     }
 }

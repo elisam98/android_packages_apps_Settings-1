@@ -22,9 +22,11 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.UserInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -36,6 +38,7 @@ import com.android.settingslib.Utils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Locale;
 
 /**
  * Wraps the power usage data of a BatterySipper with information about package name
@@ -45,10 +48,15 @@ public class BatteryEntry {
     public static final int MSG_UPDATE_NAME_ICON = 1;
     public static final int MSG_REPORT_FULLY_DRAWN = 2;
 
+    private static final String TAG = "BatteryEntry";
+    private static final String PACKAGE_SYSTEM = "android";
+
     static final HashMap<String,UidToDetail> sUidCache = new HashMap<String,UidToDetail>();
 
     static final ArrayList<BatteryEntry> mRequestQueue = new ArrayList<BatteryEntry>();
     static Handler sHandler;
+
+    static Locale sCurrentLocale = null;
 
     static private class NameAndIconLoader extends Thread {
         private boolean mAbort = false;
@@ -137,7 +145,7 @@ public class BatteryEntry {
                 break;
             case CELL:
                 name = context.getResources().getString(R.string.power_cell);
-                iconId = R.drawable.ic_settings_cell_standby;
+                iconId = R.drawable.ic_cellular_1_bar;
                 break;
             case PHONE:
                 name = context.getResources().getString(R.string.power_phone);
@@ -149,7 +157,7 @@ public class BatteryEntry {
                 break;
             case BLUETOOTH:
                 name = context.getResources().getString(R.string.power_bluetooth);
-                iconId = R.drawable.ic_settings_bluetooth;
+                iconId = com.android.internal.R.drawable.ic_settings_bluetooth;
                 break;
             case SCREEN:
                 name = context.getResources().getString(R.string.power_screen);
@@ -157,10 +165,26 @@ public class BatteryEntry {
                 break;
             case FLASHLIGHT:
                 name = context.getResources().getString(R.string.power_flashlight);
-                iconId = R.drawable.ic_power_flashlight;
+                iconId = R.drawable.ic_settings_display;
                 break;
             case APP:
-                name = sipper.packageWithHighestDrain;
+                PackageManager pm = context.getPackageManager();
+                sipper.mPackages = pm.getPackagesForUid(sipper.uidObj.getUid());
+                // Apps should only have one package
+                if (sipper.mPackages == null || sipper.mPackages.length != 1) {
+                    name = sipper.packageWithHighestDrain;
+                } else {
+                    defaultPackageName = pm.getPackagesForUid(sipper.uidObj.getUid())[0];
+                    try {
+                        ApplicationInfo appInfo =
+                            pm.getApplicationInfo(defaultPackageName, 0 /* no flags */);
+                        name = pm.getApplicationLabel(appInfo).toString();
+                    } catch (NameNotFoundException e) {
+                        Log.d(TAG, "PackageManager failed to retrieve ApplicationInfo for: "
+                            + defaultPackageName);
+                        name = defaultPackageName;
+                    }
+                }
                 break;
             case USER: {
                 UserInfo info = um.getUserInfo(sipper.userId);
@@ -175,15 +199,19 @@ public class BatteryEntry {
             } break;
             case UNACCOUNTED:
                 name = context.getResources().getString(R.string.power_unaccounted);
-                iconId = R.drawable.ic_power_system;
+                iconId = R.drawable.ic_android;
                 break;
             case OVERCOUNTED:
                 name = context.getResources().getString(R.string.power_overcounted);
-                iconId = R.drawable.ic_power_system;
+                iconId = R.drawable.ic_android;
                 break;
             case CAMERA:
                 name = context.getResources().getString(R.string.power_camera);
                 iconId = R.drawable.ic_settings_camera;
+                break;
+            case AMBIENT_DISPLAY:
+                name = context.getResources().getString(R.string.ambient_display_screen_title);
+                iconId = R.drawable.ic_settings_aod;
                 break;
         }
         if (iconId > 0) {
@@ -206,6 +234,13 @@ public class BatteryEntry {
     }
 
     void getQuickNameIconForUid(final int uid) {
+        // Locale sync to system config in Settings
+        final Locale locale = Locale.getDefault();
+        if (sCurrentLocale != locale) {
+            clearUidCache();
+            sCurrentLocale = locale;
+        }
+
         final String uidString = Integer.toString(uid);
         if (sUidCache.containsKey(uidString)) {
             UidToDetail utd = sUidCache.get(uidString);
@@ -246,10 +281,14 @@ public class BatteryEntry {
 
         PackageManager pm = context.getPackageManager();
         final int uid = sipper.uidObj.getUid();
-        sipper.mPackages = pm.getPackagesForUid(uid);
-        if (sipper.mPackages != null) {
-            String[] packageLabels = new String[sipper.mPackages.length];
-            System.arraycopy(sipper.mPackages, 0, packageLabels, 0, sipper.mPackages.length);
+        if (sipper.mPackages == null) {
+            sipper.mPackages = pm.getPackagesForUid(uid);
+        }
+
+        final String[] packages = extractPackagesFromSipper(sipper);
+        if (packages != null) {
+            String[] packageLabels = new String[packages.length];
+            System.arraycopy(packages, 0, packageLabels, 0, packages.length);
 
             // Convert package names to user-facing labels where possible
             IPackageManager ipm = AppGlobals.getPackageManager();
@@ -259,7 +298,7 @@ public class BatteryEntry {
                     final ApplicationInfo ai = ipm.getApplicationInfo(packageLabels[i],
                             0 /* no flags */, userId);
                     if (ai == null) {
-                        Log.d(PowerUsageSummary.TAG, "Retrieving null app info for package "
+                        Log.d(TAG, "Retrieving null app info for package "
                                 + packageLabels[i] + ", user " + userId);
                         continue;
                     }
@@ -268,12 +307,12 @@ public class BatteryEntry {
                         packageLabels[i] = label.toString();
                     }
                     if (ai.icon != 0) {
-                        defaultPackageName = sipper.mPackages[i];
+                        defaultPackageName = packages[i];
                         icon = ai.loadIcon(pm);
                         break;
                     }
                 } catch (RemoteException e) {
-                    Log.d(PowerUsageSummary.TAG, "Error while retrieving app info for package "
+                    Log.d(TAG, "Error while retrieving app info for package "
                             + packageLabels[i] + ", user " + userId, e);
                 }
             }
@@ -282,11 +321,11 @@ public class BatteryEntry {
                 name = packageLabels[0];
             } else {
                 // Look for an official name for this UID.
-                for (String pkgName : sipper.mPackages) {
+                for (String pkgName : packages) {
                     try {
                         final PackageInfo pi = ipm.getPackageInfo(pkgName, 0 /* no flags */, userId);
                         if (pi == null) {
-                            Log.d(PowerUsageSummary.TAG, "Retrieving null package info for package "
+                            Log.d(TAG, "Retrieving null package info for package "
                                     + pkgName + ", user " + userId);
                             continue;
                         }
@@ -303,7 +342,7 @@ public class BatteryEntry {
                             }
                         }
                     } catch (RemoteException e) {
-                        Log.d(PowerUsageSummary.TAG, "Error while retrieving package info for package "
+                        Log.d(TAG, "Error while retrieving package info for package "
                                 + pkgName + ", user " + userId, e);
                     }
                 }
@@ -327,5 +366,12 @@ public class BatteryEntry {
         if (sHandler != null) {
             sHandler.sendMessage(sHandler.obtainMessage(MSG_UPDATE_NAME_ICON, this));
         }
+    }
+
+    String[] extractPackagesFromSipper(BatterySipper sipper) {
+        // Only use system package if uid is system uid, so it could find a consistent name and icon
+        return sipper.getUid() == Process.SYSTEM_UID
+                ? new String[]{PACKAGE_SYSTEM}
+                : sipper.mPackages;
     }
 }

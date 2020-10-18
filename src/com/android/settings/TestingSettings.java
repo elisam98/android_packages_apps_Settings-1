@@ -16,11 +16,11 @@
 
 package com.android.settings;
 
+import android.app.settings.SettingsEnums;
 import android.os.Bundle;
 import android.os.UserManager;
-import android.support.v7.preference.PreferenceScreen;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import androidx.preference.PreferenceScreen;
 
 public class TestingSettings extends SettingsPreferenceFragment {
 
@@ -39,7 +39,7 @@ public class TestingSettings extends SettingsPreferenceFragment {
     }
 
     @Override
-    protected int getMetricsCategory() {
-        return MetricsEvent.TESTING;
+    public int getMetricsCategory() {
+        return SettingsEnums.TESTING;
     }
 }
